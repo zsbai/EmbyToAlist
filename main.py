@@ -67,7 +67,7 @@ def checkFilePath(filePath: str) -> bool:
 def GetRedirectUrl(filePath) -> str or int:
     # if checkFilePath return False：return Emby originalUrl
     if not checkFilePath(filePath):
-        return f"{embyPublicDomain}{flask.request.full_path}"
+        return f"{embyPublicDomain}/preventRedirct{flask.request.full_path}"
     
     alistApiUrl = f"{alistServer}/api/fs/get"
     body = {
@@ -100,8 +100,8 @@ def GetRedirectUrl(filePath) -> str or int:
         return code
 
 
-@app.route('/emby/videos/<item_id>/original.', methods=['GET'])
-def redirect(item_id):
+@app.route('/emby/videos/<item_id>/<filename>', methods=['GET'])
+def redirect(item_id, filename):
     # Example: https://emby.example.com/emby/Videos/xxxxx/original.mp4?MediaSourceId=xxxxx&api_key=xxxxx
 
     MediaSourceId = flask.request.args.get('MediaSourceId')

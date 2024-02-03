@@ -1,8 +1,9 @@
 # config.py
 
-embyServer = ""
+embyServer = "http://127.0.0.1:8096"
+embyPublicDomain = "https://emby.example.com"
 emby_key = ""
-alistServer = ""
+alistServer = "http://127.0.0.1:5244"
 alist_key = ""
 notRedirectPaths = ['/mnt/localpath/']
 
