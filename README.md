@@ -2,11 +2,11 @@
 
 本仓库适用于 Emby+云盘 的玩法，通过 Nginx 将视频播放连接重定向到云盘的直链，从而实现 播放加速/节省流量 的目的。
 
-具体实现灵感来自于 MisakaFxxk/Go_stream 和 bpking1/embyExternalUrl。
+具体实现灵感来自于 [MisakaFxxk/Go_stream](https://github.com/MisakaFxxk/Go_stream) 和 [bpking1/embyExternalUrl](https://github.com/bpking1/embyExternalUrl)。
 
 由于默认的 Nginx 发行版是不包含njs的，重新编译安装又较为麻烦，所以借鉴了 MisakaFxxk 的做法，通过Nginx将播放路径反向代理，再通过 Python 实现重定向的操作
 
-仅在 Emby 4.8.76beta 上测试成功，更低的版本可能会不兼容。
+仅在 Emby 4.8.0.76beta 上测试成功，更低的版本可能会不兼容。
 
 # 原理解释
 
