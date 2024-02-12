@@ -64,7 +64,7 @@ def checkFilePath(filePath: str) -> bool:
 
 # return Alist Raw Url or Emby Original Url
 @get_time
-def GetRedirectUrl(filePath) -> str or int:
+def GetRedirectUrl(filePath):
     # if checkFilePath return False：return Emby originalUrl
     if not checkFilePath(filePath):
         return f"{embyPublicDomain}/preventRedirct{flask.request.full_path}"
@@ -129,4 +129,4 @@ def redirect(item_id, filename):
         return flask.redirect(redirectUrl, code=302)
 
 if __name__ == "__main__":
-    app.run(port=60001, debug=False, threaded=True, host='0.0.0.0')
+    app.run(port=60001, debug=True, threaded=True, host='0.0.0.0')
