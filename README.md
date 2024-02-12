@@ -29,13 +29,60 @@
 | convertMountPath    | 是否需要对路径进行修改，如果Emby挂载路径和Alist中的路径不匹配，请设置为True。程序会将该前缀从挂载路径上删去 |
 | mountPathPrefix     | 需要删除的路径前缀                                           |
 
+# 使用教程
+
+修改配置文件后，重命名`config.example.py`到`config.py`，如果不需要WSGI服务器，可以直接使用 `python main.py` 启动，默认监听 `60001` 端口。
+
+仓库内同时提供了Gunicorn的配置文件，可以通过下面的命令使用 Gunicorn 启动
+```
+mkdir -p ./log
+
+gunicorn main:app -c ./gunicorn.config.py
+```
+
 # Nginx配置示例
 
 程序默认监听 60001 端口
 
 ```
-location ^~ / {
-    proxy_pass http://127.0.0.1:8000; 
+location ~* ^/preventRedirct/(.*)$ {
+    rewrite ^/preventRedirct/(.*)$ /$1 break;
+    proxy_pass http://127.0.0.1:8096;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header REMOTE-HOST $remote_addr;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_cache off;
+    proxy_buffering off;
+}
+location ~* ^/emby/videos/(\d*)/(stream|original).*$ {
+    # Cache alist direct link
+    add_header Cache-Control max-age=3600; 
+    proxy_pass http://127.0.0.1:60001; 
+}
+# Proxy sockets traffic for jellyfin-mpv-shim and webClient
+location ~* /(socket|embywebsocket) {
+    # Proxy emby/jellyfin Websockets traffic
+    proxy_pass http://127.0.0.1:8096;
+    ## WEBSOCKET SETTINGS ## Used to pass two way real time info to and from emby and the client.
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $http_connection;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-Protocol $scheme;
+    proxy_set_header X-Forwarded-Host $http_host;
+    proxy_connect_timeout 1h;
+    proxy_send_timeout 1h;
+    proxy_read_timeout 1h;
+    tcp_nodelay on;  ## Sends data as fast as it can not buffering large chunks, saves about 200ms per request.
+}
+location ~ / {
+    proxy_pass http://127.0.0.1:8096; 
     proxy_set_header Host $host; 
     proxy_set_header X-Real-IP $remote_addr; 
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; 
@@ -44,22 +91,12 @@ location ^~ / {
     proxy_set_header Connection "upgrade"; 
     proxy_set_header X-Forwarded-Proto $scheme; 
     proxy_http_version 1.1; 
-    add_header X-Cache $upstream_cache_status;
-    if ($request_uri ~* ^/emby/videos/\d*/)
-    {
-    proxy_pass http://127.0.0.1:60001;
-    }
-    
-}
-location /preventRedirct {
-    proxy_pass http://127.0.0.1:8000/;
-    proxy_set_header Host $host; 
-    proxy_set_header X-Real-IP $remote_addr; 
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; 
-    proxy_set_header REMOTE-HOST $remote_addr; 
-    proxy_set_header Upgrade $http_upgrade; 
-    proxy_set_header Connection "upgrade"; 
-    proxy_cache off;
+    add_header X-Cache $upstream_cache_status; 
+    #if ($request_uri ~* ^/emby/videos/\d*/(original|stream)) {
+    #proxy_pass http://127.0.0.1:60001;
+    #} 
+    add_header Strict-Transport-Security "max-age=31536000"; 
+    add_header Cache-Control no-cache; 
     proxy_buffering off;
 }
 ```
@@ -69,5 +106,3 @@ location /preventRedirct {
 暂时没有想到更好的方法，只能添加了一个 /preventRedirect 的路径然后单独处理。
 
 `proxy_cache off` 和 `proxy_buffering off` 是必须的，不添加这两项会导致播放的时候出现进度乱跳的问题。
-
-冷知识：proxy_pass 中如果最后的结尾有 '/'，nginx就会默认把location中的路径 /preventRedirect 后面的内容拼接到 proxy_pass 后面，自动删去了 /preventRedirect前缀 。
