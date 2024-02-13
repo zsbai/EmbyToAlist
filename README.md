@@ -20,7 +20,7 @@
 | ------------------- | ------------------------------------------------------------ |
 | embyServer          | 和Emby通讯的地址，可以是内网                                 |
 | embyPublicDomain    | Emby公网地址，用于路径黑名单中返回Emby原始播放链接           |
-| emby_key            | 某些情况下Emby播放链接中没有api_key，需要后台生成api_key才能获取到媒体路径 |
+| emby_key            | 一般情况下是不需要填此项的，某些特殊情况下Emby播放链接中没有api_key，需要后台生成api_key才能获取到媒体路径 |
 | alistServer         | 用于和alist api通讯的地址，可以是内网                        |
 | alist_key           | alist令牌                                                    |
 | notRedirectPaths    | 路径黑名单，如果媒体在此路径中将不会通过alist返回云盘直链    |

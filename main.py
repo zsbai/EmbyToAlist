@@ -1,5 +1,6 @@
 import requests
 import flask
+import re
 from config import *
 
 app = flask.Flask(__name__)
@@ -99,7 +100,9 @@ def GetRedirectUrl(filePath):
         print(f"unknow error: {req['message']}")
         return code
 
-
+# for infuse
+@app.route('/Videos/<item_id>/<filename>', methods=['GET'])
+# for emby
 @app.route('/emby/videos/<item_id>/<filename>', methods=['GET'])
 def redirect(item_id, filename):
     # Example: https://emby.example.com/emby/Videos/xxxxx/original.mp4?MediaSourceId=xxxxx&api_key=xxxxx
@@ -108,7 +111,15 @@ def redirect(item_id, filename):
     apiKey = flask.request.args.get('api_key')
     
     if not apiKey:
-        apiKey = emby_key
+        # for infuse
+        # try to catch the token from the header
+        auth_header = flask.request.headers.get('X-Emby-Authorization')
+        if auth_header:
+            match_token = re.search(r'Token="([^"]+)"', auth_header)
+            if match_token:
+                apiKey = match_token.group(1)
+        if not apiKey:
+            apiKey = emby_key
 
     fileInfo = GetFileInfo(item_id, MediaSourceId, apiKey)
     if fileInfo['Status'] == "Error":
