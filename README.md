@@ -57,7 +57,9 @@ location ~* ^/preventRedirct/(.*)$ {
     proxy_cache off;
     proxy_buffering off;
 }
-location ~* ^/emby/videos/(\d*)/(stream|original).*$ {
+
+# /emby/Videos/12345/xxx/Subtitles/3/0/Stream.ass?api_key=xx
+location ~* /videos/(\d*)/(stream|original).* {
     # Cache alist direct link
     add_header Cache-Control max-age=3600; 
     proxy_pass http://127.0.0.1:60001; 
