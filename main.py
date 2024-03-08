@@ -2,6 +2,7 @@ import requests
 import flask
 import re
 from config import *
+import os
 
 app = flask.Flask(__name__)
 
@@ -62,6 +63,51 @@ def checkFilePath(filePath: str) -> bool:
     # print(f"Path: {filePath} is not in notRedirectPaths, return Alist Raw Url")
     return True
 
+
+def putCacheFile(item_id, url, headers):
+    headers = dict(headers) # Copy the headers
+    # Check if Range in header
+    if 'Range' in headers:
+        if headers['Range'].startswith('bytes=0-'):
+            # Modify the range to 0-first50M
+            headers['Range'] = 'bytes=0-52428800'
+        else:
+            return False
+    else:
+        print("Error: No Range in headers")
+        return False
+    resp = requests.get(url, headers=headers, stream=True)
+    if resp.status_code == 206:
+        with open (f'{cachePath}/{item_id}', 'wb') as f:
+            for chunk in resp.iter_content(chunk_size=1024):
+                f.write(chunk)
+        return True
+    else:
+        print(f"Error: {resp.status_code}")
+        return False
+    
+def getCacheFile(item_id):
+    path = os.path.join(cachePath, item_id)
+    with open(f'{path}', 'rb') as f:
+        data = f.read(1024 * 1024)
+        while data:
+            yield data
+            data = f.read(1024 * 1024)
+
+def getNewCacheHeaders(headers):
+    headers = dict(headers) # Copy the headers
+    # remove old content-range
+    if 'Content-Range' in headers:
+        del headers['Content-Range']
+    elif 'content-range' in headers:
+        del headers['content-range']
+    
+    headers['Content-Range'] = 'bytes 0-52428800/52428801'
+    headers['Content-Length'] = '52428801'
+    return headers
+
+def getCacheStatus(item_id):
+    return os.path.exists(os.path.join(cachePath, item_id))
 
 # return Alist Raw Url or Emby Original Url
 @get_time
@@ -135,7 +181,13 @@ def redirect(item_id, filename):
     
     if type(redirectUrl) == int:
         return flask.Response(status=redirectUrl)
+    elif getCacheStatus(item_id):
+        print("\nCache File Found")
+        headers = getNewCacheHeaders(flask.request.headers)
+        return flask.Response(getCacheFile(item_id), headers=headers, status=206)
     else:
+        print("\nCache File Not Found")
+        putCacheFile(item_id, redirectUrl, flask.request.headers)
         print("\nRedirect to: "+ redirectUrl)
         return flask.redirect(redirectUrl, code=302)
 
