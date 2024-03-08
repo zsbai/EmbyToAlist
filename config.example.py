@@ -1,5 +1,6 @@
 # config.py
 
+# 地址后面不要加斜杠
 embyServer = "http://127.0.0.1:8096"
 embyPublicDomain = "https://emby.example.com"
 emby_key = ""

@@ -103,8 +103,8 @@ location ~ / {
 }
 ```
 
-关于第二个 location 块，由于路径黑名单里的媒体文件会重定向到原始链接，但原始链接就又会被nginx反向代理到python，然后无限循环...
+关于第二个 location 块，由于路径黑名单里的媒体文件会重定向到原始链接，但原始链接就又会被nginx反向代理到python，出现无限循环。
 
-暂时没有想到更好的方法，只能添加了一个 /preventRedirect 的路径然后单独处理。
+由于直接通过 Flask 反向代理 Emby 媒体文件的效率实在太低，暂时没有想到更好的方法，所以添加了一个 /preventRedirect 的路径然后单独处理。
 
-`proxy_cache off` 和 `proxy_buffering off` 是必须的，不添加这两项会导致播放的时候出现进度乱跳的问题。
+`proxy_cache off` 和 `proxy_buffering off` 是必须的，不添加前者会导致请求头中的`Range`不会被传递到后端，导致无法拖动进度条等一些列问题。

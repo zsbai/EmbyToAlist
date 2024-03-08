@@ -63,11 +63,23 @@ def checkFilePath(filePath: str) -> bool:
     return True
 
 
+def ReverseProxy():
+    reverseUrl = f"{embyServer}{flask.request.full_path}"
+    # 使用stream=True，使得requests不会立即下载文件，节省内存
+    response = requests.get(url=reverseUrl, headers=flask.request.headers, stream=True)
+    headers = response.headers
+    return flask.Response(response.iter_content(chunk_size=81920), 
+                          headers=dict(headers),
+                            status=response.status_code)
+
+
 # return Alist Raw Url or Emby Original Url
 @get_time
 def GetRedirectUrl(filePath):
     # if checkFilePath return False：return Emby originalUrl
     if not checkFilePath(filePath):
+        # 测试反代
+        #return False
         return f"{embyPublicDomain}/preventRedirct{flask.request.full_path}"
     
     alistApiUrl = f"{alistServer}/api/fs/get"
@@ -135,6 +147,8 @@ def redirect(item_id, filename):
     
     if type(redirectUrl) == int:
         return flask.Response(status=redirectUrl)
+    elif redirectUrl == False:
+        return ReverseProxy()
     else:
         print("\nRedirect to: "+ redirectUrl)
         return flask.redirect(redirectUrl, code=302)
