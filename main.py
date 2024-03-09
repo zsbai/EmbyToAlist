@@ -31,6 +31,8 @@ def GetFileInfo(item_id, MediaSourceId, apiKey) -> dict:
             data['Path'] = i['Path']
             # data['DirectStreamUrl'] = i['DirectStreamUrl']
             data['Protocol'] = i['Protocol']
+            data['Bitrate'] = i['Bitrate'] 
+            data['Size'] = i['Size']
             return data
     
     data['Status'] = "Error"
@@ -64,26 +66,36 @@ def checkFilePath(filePath: str) -> bool:
     return True
 
 
-def putCacheFile(item_id, url, headers):
+def putCacheFile(item_id, url, headers, size=52428800):
+    print(f"\nStart to cache file: {item_id}")
+    if os.path.exists(os.path.join(cachePath, item_id)):
+        print("WARNING: Cache File Already Exists or Cache File is being written. Abort.")
+        return False
     headers = dict(headers) # Copy the headers
+    headers['Host'] = url.split('/')[2]
     # Check if Range in header
     if 'Range' in headers:
         if headers['Range'].startswith('bytes=0-'):
             # Modify the range to 0-first50M
-            headers['Range'] = 'bytes=0-52428800'
+            headers['Range'] = f"bytes=0-{size-1}"
         else:
+            print(headers)
             return False
     else:
-        print("Error: No Range in headers")
+        print("Cache Error: No Range in headers")
         return False
     resp = requests.get(url, headers=headers, stream=True)
     if resp.status_code == 206:
-        with open (f'{cachePath}/{item_id}', 'wb') as f:
+        if not os.path.exists(cachePath):
+            os.makedirs(cachePath)
+        print(f"Start to write cache file: {item_id}")
+        with open (os.path.join(cachePath, item_id), 'wb') as f:
             for chunk in resp.iter_content(chunk_size=1024):
                 f.write(chunk)
+        print(f"Cache file: {item_id} has been written")
         return True
     else:
-        print(f"Error: {resp.status_code}")
+        print(f"Cache Error: Upstream return code: {resp.status_code}")
         return False
     
 def getCacheFile(item_id):
@@ -93,18 +105,6 @@ def getCacheFile(item_id):
         while data:
             yield data
             data = f.read(1024 * 1024)
-
-def getNewCacheHeaders(headers):
-    headers = dict(headers) # Copy the headers
-    # remove old content-range
-    if 'Content-Range' in headers:
-        del headers['Content-Range']
-    elif 'content-range' in headers:
-        del headers['content-range']
-    
-    headers['Content-Range'] = 'bytes 0-52428800/52428801'
-    headers['Content-Length'] = '52428801'
-    return headers
 
 def getCacheStatus(item_id):
     return os.path.exists(os.path.join(cachePath, item_id))
@@ -173,23 +173,44 @@ def redirect(item_id, filename):
         return flask.Response(status=500, response=fileInfo['Message'])
     
     filePath = fileInfo['Path']
+    fileSize = fileInfo['Size']
+    # 缓存15秒， 并取整
+    cacheFileSize = fileInfo.get('Bitrate', 52428800) / 8 * 15
+    cacheFileSize = int(cacheFileSize)
+    
+    
+    
     
     print("MediaFile Mount Path: " + filePath)
     redirectUrl = GetRedirectUrl(optimizeFilePath(filePath))
     
-    # originalUrl = f"{embyServer}{flask.request.full_path}"
-    
+    resp_headers = {
+        'Content-Type': 'video/x-matroska',
+        'Accept-Ranges': 'bytes',
+        'Content-Range': f'bytes 0-{cacheFileSize-1}/{fileSize}',
+        'Content-Length': f'{cacheFileSize}',
+        'Cache-Control': 'private, no-transform',
+        }
     if type(redirectUrl) == int:
         return flask.Response(status=redirectUrl)
+    elif redirectUrl.startswith(embyPublicDomain):
+        return flask.redirect(redirectUrl, code=302)
     elif getCacheStatus(item_id):
+        if not flask.request.headers.get('Range').startswith('bytes=0-'):
+            return flask.redirect(redirectUrl, code=302)
+        
         print("\nCache File Found")
-        headers = getNewCacheHeaders(flask.request.headers)
-        return flask.Response(getCacheFile(item_id), headers=headers, status=206)
+        return flask.Response(getCacheFile(item_id), headers=resp_headers, status=206)
     else:
         print("\nCache File Not Found")
-        putCacheFile(item_id, redirectUrl, flask.request.headers)
+        status = putCacheFile(item_id, redirectUrl, flask.request.headers, cacheFileSize)
+        if not status:
+            print("Cache Error: Can't Cache File")
         print("\nRedirect to: "+ redirectUrl)
-        return flask.redirect(redirectUrl, code=302)
+        if status:
+            return flask.Response(getCacheFile(item_id), headers=resp_headers, status=206)
+        else:
+            return flask.redirect(redirectUrl, code=302)
 
 if __name__ == "__main__":
     app.run(port=60001, debug=True, threaded=True, host='0.0.0.0')

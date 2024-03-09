@@ -18,3 +18,5 @@ specialCharsList = ['？','：']
 # if you 100% sure that the mount path is the same as the alist path, you can ignore this configuration
 convertMountPath = False
 mountPathPrefix = "/"
+
+cachePath = "/root/EmbyToAlist/cache"
