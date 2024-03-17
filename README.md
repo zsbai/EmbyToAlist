@@ -61,7 +61,8 @@ location ~* ^/preventRedirct/(.*)$ {
 # /emby/Videos/12345/xxx/Subtitles/3/0/Stream.ass?api_key=xx
 location ~* /videos/(\d*)/(stream|original).* {
     # Cache alist direct link
-    add_header Cache-Control max-age=3600; 
+    proxy_set_header Range $http_range;
+    proxy_set_header If-Range $http_if_range;
     proxy_pass http://127.0.0.1:60001; 
 }
 # Proxy sockets traffic for jellyfin-mpv-shim and webClient

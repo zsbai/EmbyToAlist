@@ -170,6 +170,10 @@ def handle_redirect_or_cache(redirectUrl, item_id, resp_headers, cacheFileSize):
     
     cache_status = getCacheStatus(item_id)
     if cache_status:
+        if not flask.request.headers.get('Range'):
+            print("\nWarning: Cannot find Range header in request.")
+            print(flask.request.headers)
+            return flask.redirect(redirectUrl, code=302)
         if not flask.request.headers.get('Range').startswith('bytes=0-'):
             return flask.redirect(redirectUrl, code=302)
         else:
@@ -210,16 +214,22 @@ def redirect(item_id, filename):
     resp_headers = {
         'Content-Type': 'video/x-matroska',
         'Accept-Ranges': 'bytes',
-        'Content-Range': f'bytes 0-{cacheFileSize-1}/{fileInfo['Size']}',
+        'Content-Range': f"bytes 0-{cacheFileSize-1}/{fileInfo['Size']}",
         'Content-Length': f'{cacheFileSize}',
-        'Cache-Control': 'private, no-transform',
+        'Cache-Control': 'private, no-transform, no-cache',
+        'X-EmbyToAList-Cache': 'Hit' if getCacheStatus(item_id) else 'Miss',
         }
     
     if isinstance(redirectUrl, int):
+        print(f"Fetal Error: {redirectUrl}")
         return flask.Response(status=redirectUrl)
     elif redirectUrl.startswith(embyPublicDomain):
+        print("Redirected Url: " + redirectUrl)
         return flask.redirect(redirectUrl, code=302)
+    else:
+        print("Redirected Url: " + redirectUrl)
     
+    print(flask.request.headers.get('Range'))
     return handle_redirect_or_cache(redirectUrl, item_id, resp_headers, cacheFileSize)
 
 if __name__ == "__main__":
