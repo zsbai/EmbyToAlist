@@ -163,7 +163,7 @@ def GetRedirectUrl(filePath):
         print(f"unknow error: {req['message']}")
         return code
 
-def handle_redirect_or_cache(redirectUrl, item_id, resp_headers, cacheFileSize):
+def handle_redirect_or_cache(redirectUrl, item_id, resp_headers, cacheFileSize, fileSize):
     """处理重定向或缓存"""
     if not enableCache:
         return flask.redirect(redirectUrl, code=302)
@@ -182,7 +182,7 @@ def handle_redirect_or_cache(redirectUrl, item_id, resp_headers, cacheFileSize):
         
         if start_byte < cacheFileSize:
             # 根据请求的起始字节和文件大小调整Content-Range响应头
-            resp_headers['Content-Range'] = f"bytes {start_byte}-{cacheFileSize-1}/{cacheFileSize}"
+            resp_headers['Content-Range'] = f"bytes {start_byte}-{cacheFileSize-1}/{fileSize}"
             print("\nCache File Found")
             # 返回缓存内容和调整后的响应头
             print(flask.request.headers.get('Range'))
@@ -241,7 +241,7 @@ def redirect(item_id, filename):
     else:
         print("Redirected Url: " + redirectUrl)
     
-    return handle_redirect_or_cache(redirectUrl, item_id, resp_headers, cacheFileSize)
+    return handle_redirect_or_cache(redirectUrl, item_id, resp_headers, cacheFileSize, fileInfo['Size'])
 
 if __name__ == "__main__":
     app.run(port=60001, debug=True, threaded=True, host='0.0.0.0')
