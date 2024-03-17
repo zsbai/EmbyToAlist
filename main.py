@@ -170,15 +170,26 @@ def handle_redirect_or_cache(redirectUrl, item_id, resp_headers, cacheFileSize):
     
     cache_status = getCacheStatus(item_id)
     if cache_status:
-        if not flask.request.headers.get('Range'):
-            print("\nWarning: Cannot find Range header in request.")
+        range_header = flask.request.headers.get('Range', '')
+        if not range_header.startswith('bytes='):
+            print("\nWarning: Range header is not correctly formatted.")
             print(flask.request.headers)
             return flask.redirect(redirectUrl, code=302)
-        if not flask.request.headers.get('Range').startswith('bytes=0-'):
-            return flask.redirect(redirectUrl, code=302)
-        else:
+        
+        # 解析Range头，获取请求的起始字节
+        bytes_range = range_header.split('=')[1]
+        start_byte = int(bytes_range.split('-')[0])
+        
+        if start_byte < cacheFileSize:
+            # 根据请求的起始字节和文件大小调整Content-Range响应头
+            resp_headers['Content-Range'] = f"bytes {start_byte}-{cacheFileSize-1}/{cacheFileSize}"
             print("\nCache File Found")
+            # 返回缓存内容和调整后的响应头
+            print(flask.request.headers.get('Range'))
             return flask.Response(getCacheFile(item_id), headers=resp_headers, status=206)
+        else:
+            return flask.redirect(redirectUrl, code=302)
+        
     else:
         status = putCacheFile(item_id, redirectUrl, flask.request.headers, cacheFileSize)
         if not status:
@@ -186,6 +197,7 @@ def handle_redirect_or_cache(redirectUrl, item_id, resp_headers, cacheFileSize):
             return flask.redirect(redirectUrl, code=302)
         else:
             # 缓存成功，直接返回缓存文件节省缓冲时间
+            print(flask.request.headers.get('Range'))
             return flask.Response(getCacheFile(item_id), headers=resp_headers, status=206)
      
  
@@ -229,7 +241,6 @@ def redirect(item_id, filename):
     else:
         print("Redirected Url: " + redirectUrl)
     
-    print(flask.request.headers.get('Range'))
     return handle_redirect_or_cache(redirectUrl, item_id, resp_headers, cacheFileSize)
 
 if __name__ == "__main__":
