@@ -3,9 +3,9 @@ import flask
 import re
 from config import *
 import os
+from datetime import datetime
 
 app = flask.Flask(__name__)
-
 
 # a wrapper function to get the time of the function
 def get_time(func):
@@ -122,9 +122,23 @@ def getCacheFile(item_id):
             yield data
             data = f.read(1024 * 1024)
 
-def getCacheStatus(item_id) -> bool:
-    """检查缓存文件是否存在"""
-    return os.path.exists(os.path.join(cachePath, item_id, 'cache_file'))
+def getCacheStatus(item_id) -> tuple:
+    """检查缓存文件是否存在，并检查其最后修改时间"""
+    cache_file_path = os.path.join(cachePath, item_id, 'cache_file')
+    
+    if os.path.exists(cache_file_path):
+        # 获取文件最后修改时间
+        mod_time = os.path.getmtime(cache_file_path)
+        now_time = datetime.now().timestamp()
+        
+        # 如果文件在过去15秒内被修改过，可能仍在缓存过程中
+        # 防止重复缓存由putCacheFile负责
+        if now_time - mod_time < 15:
+            return False
+        else:
+            return True
+    else:
+        return False
 
 def extract_api_key():
     """从请求中提取API密钥"""
@@ -203,18 +217,18 @@ def handle_redirect_or_cache(redirectUrl, item_id, resp_headers, cacheFileSize, 
     start_byte = int(bytes_range.split('-')[0])
     
     if start_byte < cacheFileSize:
-        getCache_status = getCacheStatus(item_id)
-        if getCache_status:
+        getCache_exists = getCacheStatus(item_id)
+        if getCache_exists:
             # 根据请求的起始字节和文件大小调整Content-Range响应头
             resp_headers['Content-Range'] = f"bytes {start_byte}-{cacheFileSize-1}/{fileSize}"
-            print("\nCache File Found")
+            print("\nCached file exists and is valid")
             # 返回缓存内容和调整后的响应头
             print(flask.request.headers.get('Range'))
             return flask.Response(getCacheFile(item_id), headers=resp_headers, status=206)
         else:
             putCache_status = putCacheFile(item_id, redirectUrl, flask.request.headers, cacheFileSize)
             if not putCache_status:
-                print("Cache Error: Can't Cache File")
+                # print("Cache Error: Can't Cache File")
                 return flask.redirect(redirectUrl, code=302)
             else:
                 # 缓存成功，直接返回缓存文件节省缓冲时间
@@ -234,12 +248,15 @@ def redirect(item_id, filename):
     # Example: https://emby.example.com/emby/Videos/xxxxx/original.mp4?MediaSourceId=xxxxx&api_key=xxxxx
     
     apiKey = extract_api_key()
-
     fileInfo = GetFileInfo(item_id, flask.request.args.get('MediaSourceId'), apiKey)
     
     if fileInfo['Status'] == "Error":
         print(fileInfo['Message'])
         return flask.Response(status=500, response=fileInfo['Message'])
+    
+    # 获取当前时间，并格式化为包含毫秒的字符串
+    current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+    print(f"\n{current_time} - Requested Item ID: {item_id}")
     
     # 缓存15秒， 并取整
     cacheFileSize = int(fileInfo.get('Bitrate', 52428800) / 8 * 15)
