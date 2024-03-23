@@ -37,7 +37,7 @@ def get_content_type(container):
 def GetFileInfo(item_id, MediaSourceId, apiKey) -> dict:
     data = {}
     url = f"{embyServer}/emby/Items/{item_id}/PlaybackInfo?MediaSourceId={MediaSourceId}&api_key={apiKey}"
-    print(url)
+    print("\n" + url)
     req = requests.get(url).json()
     for i in req['MediaSources']:
         # print(i)
@@ -102,7 +102,7 @@ def putCacheFile(item_id, url, headers, size=52428800) -> bool:
 
     resp = requests.get(url, headers=headers, stream=True)
     if resp.status_code == 206: 
-        print(f"Start to write cache file: {item_id}")
+        # print(f"Start to write cache file: {item_id}")
         with open (cache_file_path, 'wb') as f:
             for chunk in resp.iter_content(chunk_size=1024):
                 f.write(chunk)
@@ -169,11 +169,14 @@ def GetRedirectUrl(filePath):
             protocol, rest = raw_url.split("://", 1)
             domain, path = rest.split("/", 1)
             if not ReverseStorageUrl.endswith("/"):
-                ReverseStorageUrl += "/"
+                url = f"{ReverseStorageUrl}/{path}"
+            else:
+                url = f"{ReverseStorageUrl}{path}"
+            return url
+        else:
+            return raw_url
             
-            url = f"{ReverseStorageUrl}{path}"
-            
-        return url
+        
     elif code == 403:
         print("403 Forbidden, Please check your Alist Key")
         return 403
@@ -218,6 +221,7 @@ def handle_redirect_or_cache(redirectUrl, item_id, resp_headers, cacheFileSize, 
                 print(flask.request.headers.get('Range'))
                 return flask.Response(getCacheFile(item_id), headers=resp_headers, status=206)
     else:
+        print(flask.request.headers.get('Range'))
         return flask.redirect(redirectUrl, code=302)
 
  

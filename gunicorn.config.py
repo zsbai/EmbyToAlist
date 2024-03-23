@@ -5,6 +5,9 @@ loglevel = "info"
 accesslog = "./log/access.log"
 errorlog = "./log/error.log"
 
+# 捕获输出到错误日志
+capture_output = True
+
 timeout = 30
 keepalive = 2
 
