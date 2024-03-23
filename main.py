@@ -18,6 +18,21 @@ def get_time(func):
         return result
     return wrapper
 
+def get_content_type(container):
+    # 容器映射到Content-Type
+    content_types = {
+        'mp4': 'video/mp4',
+        'webm': 'video/webm',
+        'ogg': 'video/ogg',
+        'avi': 'video/x-msvideo',
+        'mpeg': 'video/mpeg',
+        'mov': 'video/quicktime',
+        'mkv': 'video/x-matroska'
+    }
+
+    # 返回对应的Content-Type，如果未找到，返回一个默认值
+    return content_types.get(container.lower(), 'application/octet-stream')
+
 # used to get the file info from emby server
 def GetFileInfo(item_id, MediaSourceId, apiKey) -> dict:
     data = {}
@@ -33,6 +48,7 @@ def GetFileInfo(item_id, MediaSourceId, apiKey) -> dict:
             data['Protocol'] = i['Protocol']
             data['Bitrate'] = i['Bitrate'] 
             data['Size'] = i['Size']
+            data['Container'] = i['Container']
             return data
     
     data['Status'] = "Error"
@@ -70,31 +86,27 @@ def checkFilePath(filePath: str) -> bool:
 def putCacheFile(item_id, url, headers, size=52428800) -> bool:
     """缓存文件"""
     print(f"\nStart to cache file: {item_id}")
-    if os.path.exists(os.path.join(cachePath, item_id)):
+    cache_file_path = os.path.join(cachePath, item_id, 'cache_file')
+    
+    if os.path.exists(cache_file_path):
         print("WARNING: Cache File Already Exists or Cache File is being written. Abort.")
         return False
+    else:
+        os.makedirs(os.path.join(cachePath, item_id), exist_ok=True)
+        
     headers = dict(headers) # Copy the headers
     headers['Host'] = url.split('/')[2]
-    # Check if Range in header
-    if 'Range' in headers:
-        if headers['Range'].startswith('bytes=0-'):
-            # Modify the range to 0-first50M
-            headers['Range'] = f"bytes=0-{size-1}"
-        else:
-            print(headers)
-            return False
-    else:
-        print("Cache Error: No Range in headers")
-        return False
-    
+      
+    # Modify the range to 0-first50M
+    headers['Range'] = f"bytes=0-{size-1}"
+
     resp = requests.get(url, headers=headers, stream=True)
-    if resp.status_code == 206:
-        if not os.path.exists(cachePath):
-            os.makedirs(cachePath)
+    if resp.status_code == 206: 
         print(f"Start to write cache file: {item_id}")
-        with open (os.path.join(cachePath, item_id), 'wb') as f:
+        with open (cache_file_path, 'wb') as f:
             for chunk in resp.iter_content(chunk_size=1024):
                 f.write(chunk)
+                
         print(f"Cache file: {item_id} has been written")
         return True
     else:
@@ -103,7 +115,7 @@ def putCacheFile(item_id, url, headers, size=52428800) -> bool:
     
 def getCacheFile(item_id):
     """读取缓存文件"""
-    path = os.path.join(cachePath, item_id)
+    path = os.path.join(cachePath, item_id, 'cache_file')
     with open(f'{path}', 'rb') as f:
         data = f.read(1024 * 1024)
         while data:
@@ -112,7 +124,7 @@ def getCacheFile(item_id):
 
 def getCacheStatus(item_id) -> bool:
     """检查缓存文件是否存在"""
-    return os.path.exists(os.path.join(cachePath, item_id))
+    return os.path.exists(os.path.join(cachePath, item_id, 'cache_file'))
 
 def extract_api_key():
     """从请求中提取API密钥"""
@@ -152,7 +164,16 @@ def GetRedirectUrl(filePath):
     code = req['code']
     
     if code == 200:
-        return req['data']['raw_url']
+        raw_url = req['data']['raw_url']
+        if ReverseStorageUrl:
+            protocol, rest = raw_url.split("://", 1)
+            domain, path = rest.split("/", 1)
+            if not ReverseStorageUrl.endswith("/"):
+                ReverseStorageUrl += "/"
+            
+            url = f"{ReverseStorageUrl}{path}"
+            
+        return url
     elif code == 403:
         print("403 Forbidden, Please check your Alist Key")
         return 403
@@ -168,19 +189,19 @@ def handle_redirect_or_cache(redirectUrl, item_id, resp_headers, cacheFileSize, 
     if not enableCache:
         return flask.redirect(redirectUrl, code=302)
     
-    cache_status = getCacheStatus(item_id)
-    if cache_status:
-        range_header = flask.request.headers.get('Range', '')
-        if not range_header.startswith('bytes='):
-            print("\nWarning: Range header is not correctly formatted.")
-            print(flask.request.headers)
-            return flask.redirect(redirectUrl, code=302)
-        
-        # 解析Range头，获取请求的起始字节
-        bytes_range = range_header.split('=')[1]
-        start_byte = int(bytes_range.split('-')[0])
-        
-        if start_byte < cacheFileSize:
+    range_header = flask.request.headers.get('Range', '')
+    if not range_header.startswith('bytes='):
+        print("\nWarning: Range header is not correctly formatted.")
+        print(flask.request.headers)
+        return flask.redirect(redirectUrl, code=302)
+    
+    # 解析Range头，获取请求的起始字节
+    bytes_range = range_header.split('=')[1]
+    start_byte = int(bytes_range.split('-')[0])
+    
+    if start_byte < cacheFileSize:
+        getCache_status = getCacheStatus(item_id)
+        if getCache_status:
             # 根据请求的起始字节和文件大小调整Content-Range响应头
             resp_headers['Content-Range'] = f"bytes {start_byte}-{cacheFileSize-1}/{fileSize}"
             print("\nCache File Found")
@@ -188,18 +209,17 @@ def handle_redirect_or_cache(redirectUrl, item_id, resp_headers, cacheFileSize, 
             print(flask.request.headers.get('Range'))
             return flask.Response(getCacheFile(item_id), headers=resp_headers, status=206)
         else:
-            return flask.redirect(redirectUrl, code=302)
-        
+            putCache_status = putCacheFile(item_id, redirectUrl, flask.request.headers, cacheFileSize)
+            if not putCache_status:
+                print("Cache Error: Can't Cache File")
+                return flask.redirect(redirectUrl, code=302)
+            else:
+                # 缓存成功，直接返回缓存文件节省缓冲时间
+                print(flask.request.headers.get('Range'))
+                return flask.Response(getCacheFile(item_id), headers=resp_headers, status=206)
     else:
-        status = putCacheFile(item_id, redirectUrl, flask.request.headers, cacheFileSize)
-        if not status:
-            print("Cache Error: Can't Cache File")
-            return flask.redirect(redirectUrl, code=302)
-        else:
-            # 缓存成功，直接返回缓存文件节省缓冲时间
-            print(flask.request.headers.get('Range'))
-            return flask.Response(getCacheFile(item_id), headers=resp_headers, status=206)
-     
+        return flask.redirect(redirectUrl, code=302)
+
  
  
 # for infuse
@@ -224,7 +244,7 @@ def redirect(item_id, filename):
     redirectUrl = GetRedirectUrl(optimizeFilePath(fileInfo['Path']))
     
     resp_headers = {
-        'Content-Type': 'video/x-matroska',
+        'Content-Type': get_content_type(fileInfo['Container']),
         'Accept-Ranges': 'bytes',
         'Content-Range': f"bytes 0-{cacheFileSize-1}/{fileInfo['Size']}",
         'Content-Length': f'{cacheFileSize}',
