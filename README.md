@@ -28,6 +28,8 @@
 | specialCharsList    | 出现问题的特殊字符，如果遇到了其他特殊字符导致alist找不到文件可以填到这里 |
 | convertMountPath    | 是否需要对路径进行修改，如果Emby挂载路径和Alist中的路径不匹配，请设置为True。程序会将该前缀从挂载路径上删去 |
 | mountPathPrefix     | 需要删除的路径前缀                                           |
+| enableCache         | 是否启用本地缓存，将在播放的时候缓存视频的前15秒到本地，用于起播加速 |
+| cachePath           | 缓存存放路径 |
 
 # 使用教程
 

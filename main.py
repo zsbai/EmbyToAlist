@@ -4,6 +4,10 @@ import re
 from config import *
 import os
 from datetime import datetime
+import concurrent.futures
+
+# 创建全局线程池
+executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
 
 app = flask.Flask(__name__)
 
@@ -17,6 +21,10 @@ def get_time(func):
         print(f"Function {func.__name__} takes: {end - start} seconds")
         return result
     return wrapper
+
+# 获取当前时间，并格式化为包含毫秒的字符串
+def getCurrentTime():
+    return datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
 
 def get_content_type(container):
     # 容器映射到Content-Type
@@ -85,11 +93,11 @@ def checkFilePath(filePath: str) -> bool:
 
 def putCacheFile(item_id, url, headers, size=52428800) -> bool:
     """缓存文件"""
-    print(f"\nStart to cache file: {item_id}")
+    print(f"\n {getCurrentTime()}-Start to cache file: {item_id}")
     cache_file_path = os.path.join(cachePath, item_id, 'cache_file')
     
     if os.path.exists(cache_file_path):
-        print("WARNING: Cache File Already Exists or Cache File is being written. Abort.")
+        print(f"{getCurrentTime()}-WARNING: Cache File Already Exists or Cache File is being written. Abort.")
         return False
     else:
         os.makedirs(os.path.join(cachePath, item_id), exist_ok=True)
@@ -107,10 +115,10 @@ def putCacheFile(item_id, url, headers, size=52428800) -> bool:
             for chunk in resp.iter_content(chunk_size=1024):
                 f.write(chunk)
                 
-        print(f"Cache file: {item_id} has been written")
+        print(f"{getCurrentTime()}-Cache file: {item_id} has been written")
         return True
     else:
-        print(f"Cache Error: Upstream return code: {resp.status_code}")
+        print(f"{getCurrentTime()}-Cache Error: Upstream return code: {resp.status_code}")
         return False
     
 def getCacheFile(item_id):
@@ -179,13 +187,14 @@ def GetRedirectUrl(filePath):
     
     if code == 200:
         raw_url = req['data']['raw_url']
-        if ReverseStorageUrl:
+        # 替换原始URL为反向代理URL
+        if AlistPublicStorageDomain:
             protocol, rest = raw_url.split("://", 1)
             domain, path = rest.split("/", 1)
-            if not ReverseStorageUrl.endswith("/"):
-                url = f"{ReverseStorageUrl}/{path}"
+            if not AlistPublicStorageDomain.endswith("/"):
+                url = f"{AlistPublicStorageDomain}/{path}"
             else:
-                url = f"{ReverseStorageUrl}{path}"
+                url = f"{AlistPublicStorageDomain}{path}"
             return url
         else:
             return raw_url
@@ -226,19 +235,17 @@ def handle_redirect_or_cache(redirectUrl, item_id, resp_headers, cacheFileSize, 
             print(flask.request.headers.get('Range'))
             return flask.Response(getCacheFile(item_id), headers=resp_headers, status=206)
         else:
-            putCache_status = putCacheFile(item_id, redirectUrl, flask.request.headers, cacheFileSize)
-            if not putCache_status:
-                # print("Cache Error: Can't Cache File")
-                return flask.redirect(redirectUrl, code=302)
-            else:
-                # 缓存成功，直接返回缓存文件节省缓冲时间
-                print(flask.request.headers.get('Range'))
-                return flask.Response(getCacheFile(item_id), headers=resp_headers, status=206)
+            
+            future = executor.submit(putCacheFile, item_id, redirectUrl, flask.request.headers, cacheFileSize)
+            future.add_done_callback(lambda future: print(future.result()))
+
+            # 重定向到原始URL
+            return flask.redirect(redirectUrl, code=302)
+            
     else:
         print(flask.request.headers.get('Range'))
         return flask.redirect(redirectUrl, code=302)
 
- 
  
 # for infuse
 @app.route('/Videos/<item_id>/<filename>', methods=['GET'])
@@ -254,9 +261,8 @@ def redirect(item_id, filename):
         print(fileInfo['Message'])
         return flask.Response(status=500, response=fileInfo['Message'])
     
-    # 获取当前时间，并格式化为包含毫秒的字符串
-    current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
-    print(f"\n{current_time} - Requested Item ID: {item_id}")
+    
+    print(f"\n{getCurrentTime()} - Requested Item ID: {item_id}")
     
     # 缓存15秒， 并取整
     cacheFileSize = int(fileInfo.get('Bitrate', 52428800) / 8 * 15)

@@ -1,15 +1,21 @@
 # config.py
 
 embyServer = "http://127.0.0.1:8096"
-embyPublicDomain = "https://emby.example.com"
 emby_key = ""
 alistServer = "http://127.0.0.1:5244"
 alist_key = ""
 
 # 反代后端存储的主机名，也可以直接在 Alist 中配置，二选一
 # 由于 Alist 不支持二级目录的反代地址，所以如果反向代理地址是二级目录，需要在这里配置
+# 不清楚请留空
 # Example: https://api.example.com/onedrive/
-ReverseStorageUrl = ""
+AlistPublicStorageDomain = ""
+
+# 该配置用于决定最终返回 “本地路径” 给客户端的视频地址，默认将添加 “/preventRedirct” 路径
+# 如：https://emby.example.com/preventRedirct/xxx/xxx.mp4
+# 默认请填写 Emby 的公网域名
+embyPublicDomain = "https://emby.example.com"
+
 
 notRedirectPaths = ['/mnt/localpath/']
 
