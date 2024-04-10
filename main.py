@@ -11,6 +11,8 @@ executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
 
 app = flask.Flask(__name__)
 
+URL_CACHE = {}
+
 # a wrapper function to get the time of the function
 def get_time(func):
     def wrapper(*args, **kwargs):
@@ -87,7 +89,6 @@ def checkFilePath(filePath: str) -> bool:
         if filePath.startswith(path):
             print(f"\nFilePath is in notRedirectPaths, return Emby Original Url")
             return False
-    # print(f"Path: {filePath} is not in notRedirectPaths, return Alist Raw Url")
     return True
 
 
@@ -161,11 +162,14 @@ def extract_api_key():
 
 # return Alist Raw Url or Emby Original Url
 @get_time
-def GetRedirectUrl(filePath):
+def RedirectToAlistRawUrl(filePath):
     """获取视频直链地址"""
-    # if checkFilePath return False：return Emby originalUrl
-    if not checkFilePath(filePath):
-        return f"{embyPublicDomain}/preventRedirct{flask.request.full_path}"
+    
+    if filePath in URL_CACHE:
+        now_time = datetime.now().timestamp()
+        if now_time - URL_CACHE[filePath]['time'] < 300:
+            print("\nAlist Raw URL Cache exists and is valid (less than 5 minutes)")
+            return flask.redirect(URL_CACHE[filePath]['url'], code=302)
     
     alistApiUrl = f"{alistServer}/api/fs/get"
     body = {
@@ -192,61 +196,25 @@ def GetRedirectUrl(filePath):
             protocol, rest = raw_url.split("://", 1)
             domain, path = rest.split("/", 1)
             if not AlistPublicStorageDomain.endswith("/"):
-                url = f"{AlistPublicStorageDomain}/{path}"
+                raw_url = f"{AlistPublicStorageDomain}/{path}"
             else:
-                url = f"{AlistPublicStorageDomain}{path}"
-            return url
-        else:
-            return raw_url
+                raw_url = f"{AlistPublicStorageDomain}{path}"
+        
+        URL_CACHE[filePath] = {
+            'url': raw_url,
+            'time': datetime.now().timestamp()
+        }
+        print("Redirected Url: " + raw_url)
+        return flask.redirect(raw_url, code=302)
             
         
     elif code == 403:
         print("403 Forbidden, Please check your Alist Key")
-        return 403
-    elif code == 500:
+        return flask.Response(status=403, response="403 Forbidden, Please check your Alist Key")
+    else:
         print(f"Error: {req['message']}")
-        return 500
-    else:
-        print(f"unknow error: {req['message']}")
-        return code
+        return flask.Response(status=500, response=req['message'])
 
-def handle_redirect_or_cache(redirectUrl, item_id, resp_headers, cacheFileSize, fileSize):
-    """处理重定向或缓存"""
-    if not enableCache:
-        return flask.redirect(redirectUrl, code=302)
-    
-    range_header = flask.request.headers.get('Range', '')
-    if not range_header.startswith('bytes='):
-        print("\nWarning: Range header is not correctly formatted.")
-        print(flask.request.headers)
-        return flask.redirect(redirectUrl, code=302)
-    
-    # 解析Range头，获取请求的起始字节
-    bytes_range = range_header.split('=')[1]
-    start_byte = int(bytes_range.split('-')[0])
-    
-    if start_byte < cacheFileSize:
-        getCache_exists = getCacheStatus(item_id)
-        if getCache_exists:
-            # 根据请求的起始字节和文件大小调整Content-Range响应头
-            resp_headers['Content-Range'] = f"bytes {start_byte}-{cacheFileSize-1}/{fileSize}"
-            print("\nCached file exists and is valid")
-            # 返回缓存内容和调整后的响应头
-            print(flask.request.headers.get('Range'))
-            return flask.Response(getCacheFile(item_id), headers=resp_headers, status=206)
-        else:
-            
-            future = executor.submit(putCacheFile, item_id, redirectUrl, flask.request.headers, cacheFileSize)
-            future.add_done_callback(lambda future: print(future.result()))
-
-            # 重定向到原始URL
-            return flask.redirect(redirectUrl, code=302)
-            
-    else:
-        print(flask.request.headers.get('Range'))
-        return flask.redirect(redirectUrl, code=302)
-
- 
 # for infuse
 @app.route('/Videos/<item_id>/<filename>', methods=['GET'])
 # for emby
@@ -263,32 +231,59 @@ def redirect(item_id, filename):
     
     
     print(f"\n{getCurrentTime()} - Requested Item ID: {item_id}")
-    
-    # 缓存15秒， 并取整
-    cacheFileSize = int(fileInfo.get('Bitrate', 52428800) / 8 * 15)
-        
     print("MediaFile Mount Path: " + fileInfo['Path'])
-    redirectUrl = GetRedirectUrl(optimizeFilePath(fileInfo['Path']))
     
-    resp_headers = {
-        'Content-Type': get_content_type(fileInfo['Container']),
-        'Accept-Ranges': 'bytes',
-        'Content-Range': f"bytes 0-{cacheFileSize-1}/{fileInfo['Size']}",
-        'Content-Length': f'{cacheFileSize}',
-        'Cache-Control': 'private, no-transform, no-cache',
-        'X-EmbyToAList-Cache': 'Hit' if getCacheStatus(item_id) else 'Miss',
-        }
-    
-    if isinstance(redirectUrl, int):
-        print(f"Fetal Error: {redirectUrl}")
-        return flask.Response(status=redirectUrl)
-    elif redirectUrl.startswith(embyPublicDomain):
+    # if checkFilePath return False：return Emby originalUrl
+    if not checkFilePath(fileInfo['Path']):
+        redirectUrl = f"{embyPublicDomain}/preventRedirct{flask.request.full_path}"
         print("Redirected Url: " + redirectUrl)
-        return flask.redirect(redirectUrl, code=302)
+        return flask.redirect(f"{embyPublicDomain}/preventRedirct{flask.request.full_path}", code=302)
+    
+    # 如果没有启用缓存，直接返回Alist Raw Url
+    if not enableCache:
+        return RedirectToAlistRawUrl(optimizeFilePath(fileInfo['Path']))
+    
+    range_header = flask.request.headers.get('Range', '')
+    if not range_header.startswith('bytes='):
+        print("\nWarning: Range header is not correctly formatted.")
+        print(flask.request.headers)
+        return RedirectToAlistRawUrl(optimizeFilePath(fileInfo['Path']))
+    
+    # 解析Range头，获取请求的起始字节
+    bytes_range = range_header.split('=')[1]
+    start_byte = int(bytes_range.split('-')[0])
+    
+    # 获取缓存15秒的文件大小， 并取整
+    cacheFileSize = int(fileInfo.get('Bitrate', 52428800) / 8 * 15)
+    
+    if start_byte < cacheFileSize:
+        getCacheStatus_exists = getCacheStatus(item_id)
+        if getCacheStatus_exists:
+            
+            resp_headers = {
+            'Content-Type': get_content_type(fileInfo['Container']),
+            'Accept-Ranges': 'bytes',
+            'Content-Range': f"bytes {start_byte}-{cacheFileSize-1}/{fileInfo['Size']}",
+            'Content-Length': f'{cacheFileSize}',
+            'Cache-Control': 'private, no-transform, no-cache',
+            'X-EmbyToAList-Cache': 'Hit' if getCacheStatus(item_id) else 'Miss',
+            }
+            
+            print("\nCached file exists and is valid")
+            # 返回缓存内容和调整后的响应头
+            print(range_header)
+            return flask.Response(getCacheFile(item_id), headers=resp_headers, status=206)
+        else:
+            # 启动线程缓存文件
+            future = executor.submit(putCacheFile, item_id, redirectUrl, flask.request.headers, cacheFileSize)
+            future.add_done_callback(lambda future: print(future.result()))
+
+            # 重定向到原始URL
+            return RedirectToAlistRawUrl(optimizeFilePath(fileInfo['Path']))
+            
     else:
-        print("Redirected Url: " + redirectUrl)
-    
-    return handle_redirect_or_cache(redirectUrl, item_id, resp_headers, cacheFileSize, fileInfo['Size'])
+        print(range_header)
+        return RedirectToAlistRawUrl(optimizeFilePath(fileInfo['Path']))
 
 if __name__ == "__main__":
     app.run(port=60001, debug=True, threaded=True, host='0.0.0.0')
