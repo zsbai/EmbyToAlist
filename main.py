@@ -192,13 +192,13 @@ def RedirectToAlistRawUrl(filePath):
     if code == 200:
         raw_url = req['data']['raw_url']
         # 替换原始URL为反向代理URL
-        if AlistPublicStorageDomain:
+        if AlistPublicStorageURL:
             protocol, rest = raw_url.split("://", 1)
             domain, path = rest.split("/", 1)
-            if not AlistPublicStorageDomain.endswith("/"):
-                raw_url = f"{AlistPublicStorageDomain}/{path}"
+            if not AlistPublicStorageURL.endswith("/"):
+                raw_url = f"{AlistPublicStorageURL}/{path}"
             else:
-                raw_url = f"{AlistPublicStorageDomain}{path}"
+                raw_url = f"{AlistPublicStorageURL}{path}"
         
         URL_CACHE[filePath] = {
             'url': raw_url,
@@ -235,9 +235,9 @@ def redirect(item_id, filename):
     
     # if checkFilePath return False：return Emby originalUrl
     if not checkFilePath(fileInfo['Path']):
-        redirectUrl = f"{embyPublicDomain}/preventRedirct{flask.request.full_path}"
+        redirectUrl = f"{embyPublicURL}/preventRedirct{flask.request.full_path}"
         print("Redirected Url: " + redirectUrl)
-        return flask.redirect(f"{embyPublicDomain}/preventRedirct{flask.request.full_path}", code=302)
+        return flask.redirect(f"{embyPublicURL}/preventRedirct{flask.request.full_path}", code=302)
     
     # 如果没有启用缓存，直接返回Alist Raw Url
     if not enableCache:
