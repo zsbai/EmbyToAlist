@@ -92,11 +92,17 @@ def checkFilePath(filePath: str) -> bool:
     return True
 
 
-def putCacheFile(item_id, url, headers, size=52428800) -> bool:
+def putCacheFile(item_id, url, headers, size=52428800, startPoint=0) -> bool:
     """缓存文件"""
-    print(f"\n {getCurrentTime()}-Start to cache file: {item_id}")
-    cache_file_path = os.path.join(cachePath, item_id, 'cache_file')
-    
+    if startPoint == 0:
+        cache_file_path = os.path.join(cachePath, item_id, 'cache_file')
+        size = size - 1
+        name = size
+    else:
+        cache_file_path = os.path.join(cachePath, item_id, f'cache_file_{startPoint}')
+        size = ''
+        name = startPoint
+    print(f"\n {getCurrentTime()} - Start to cache file {name}: {item_id}")
     if os.path.exists(cache_file_path):
         print(f"{getCurrentTime()}-WARNING: Cache File Already Exists or Cache File is being written. Abort.")
         return False
@@ -106,8 +112,8 @@ def putCacheFile(item_id, url, headers, size=52428800) -> bool:
     headers = dict(headers) # Copy the headers
     headers['Host'] = url.split('/')[2]
       
-    # Modify the range to 0-first50M
-    headers['Range'] = f"bytes=0-{size-1}"
+    # Modify the range to startPoint-first50M
+    headers['Range'] = f"bytes={startPoint}-{size}"
 
     resp = requests.get(url, headers=headers, stream=True)
     if resp.status_code == 206: 
@@ -116,24 +122,35 @@ def putCacheFile(item_id, url, headers, size=52428800) -> bool:
             for chunk in resp.iter_content(chunk_size=1024):
                 f.write(chunk)
                 
-        print(f"{getCurrentTime()}-Cache file: {item_id} has been written")
+        print(f"{getCurrentTime()}-Cache file {name}: {item_id} has been written")
         return True
     else:
-        print(f"{getCurrentTime()}-Cache Error: Upstream return code: {resp.status_code}")
+        print(f"{getCurrentTime()}-Cache Error {name}: Upstream return code: {resp.status_code}")
         return False
     
-def getCacheFile(item_id):
+def getCacheFile(item_id, name=''):
     """读取缓存文件"""
-    path = os.path.join(cachePath, item_id, 'cache_file')
+    if name:
+        name = f'cache_file_{name}'
+    else:
+        name = 'cache_file'
+        
+    path = os.path.join(cachePath, item_id, name)
     with open(f'{path}', 'rb') as f:
         data = f.read(1024 * 1024)
         while data:
             yield data
             data = f.read(1024 * 1024)
 
-def getCacheStatus(item_id) -> tuple:
+def getCacheStatus(item_id, name='') -> tuple:
     """检查缓存文件是否存在，并检查其最后修改时间"""
-    cache_file_path = os.path.join(cachePath, item_id, 'cache_file')
+    
+    if name:
+        name = f'cache_file_{name}'
+    else:
+        name = 'cache_file'
+
+    cache_file_path = os.path.join(cachePath, item_id, name)
     
     if os.path.exists(cache_file_path):
         # 获取文件最后修改时间
@@ -280,7 +297,30 @@ def redirect(item_id, filename):
 
             # 重定向到原始URL
             return RedirectToAlistRawUrl(optimizeFilePath(fileInfo['Path']))
+     
+    # 当请求文件末尾章节信息时
+    elif fileInfo['Size'] - start_byte < 2 * 1024 * 1024:
+        if getCacheStatus(item_id, name=start_byte):
+            resp_headers = {
+            'Content-Type': get_content_type(fileInfo['Container']),
+            'Accept-Ranges': 'bytes',
+            'Content-Range': f"bytes {start_byte}-{fileInfo['Size']-1}/{fileInfo['Size']}",
+            'Content-Length': f'{fileInfo["Size"]-start_byte}',
+            'Cache-Control': 'private, no-transform, no-cache',
+            'X-EmbyToAList-Cache': 'Hit' if getCacheStatus(item_id, name=start_byte) else 'Miss',
+            }
             
+            print("\nCached file exists and is valid")
+            # 返回缓存内容和调整后的响应头
+            print(range_header)
+            return flask.Response(getCacheFile(item_id=item_id, name=start_byte), headers=resp_headers, status=206)
+        else:
+            # 启动线程缓存文件
+            future = executor.submit(putCacheFile, item_id, redirectUrl, flask.request.headers, fileInfo['Size'], start_byte)
+            future.add_done_callback(lambda future: print(future.result()))
+
+            # 重定向到原始URL
+            return RedirectToAlistRawUrl(optimizeFilePath(fileInfo['Path']))
     else:
         print(range_header)
         return RedirectToAlistRawUrl(optimizeFilePath(fileInfo['Path']))
