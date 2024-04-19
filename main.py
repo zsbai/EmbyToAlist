@@ -92,7 +92,7 @@ def checkFilePath(filePath: str) -> bool:
     return True
 
 
-def putCacheFile(item_id, url, headers, size=52428800, startPoint=0) -> bool:
+def putCacheFile(item_id, path, headers, size=52428800, startPoint=0) -> bool:
     """缓存文件"""
     if startPoint == 0:
         cache_file_path = os.path.join(cachePath, item_id, 'cache_file')
@@ -108,14 +108,20 @@ def putCacheFile(item_id, url, headers, size=52428800, startPoint=0) -> bool:
         return False
     else:
         os.makedirs(os.path.join(cachePath, item_id), exist_ok=True)
-        
+    
+    # 获取Alist Raw Url
+    raw_url, code = getAlistURL(path)
+    if code != 200:
+        print(f"{getCurrentTime()}-Cache Error {name}, Alist Return: {raw_url}")
+        return False
+    
     headers = dict(headers) # Copy the headers
-    headers['Host'] = url.split('/')[2]
+    headers['Host'] = raw_url.split('/')[2]
       
     # Modify the range to startPoint-first50M
     headers['Range'] = f"bytes={startPoint}-{size}"
 
-    resp = requests.get(url, headers=headers, stream=True)
+    resp = requests.get(raw_url, headers=headers, stream=True)
     if resp.status_code == 206: 
         # print(f"Start to write cache file: {item_id}")
         with open (cache_file_path, 'wb') as f:
@@ -177,16 +183,8 @@ def extract_api_key():
                 api_key = match_token.group(1)
     return api_key or emby_key
 
-# return Alist Raw Url or Emby Original Url
-@get_time
-def RedirectToAlistRawUrl(filePath):
-    """获取视频直链地址"""
-    
-    if filePath in URL_CACHE:
-        now_time = datetime.now().timestamp()
-        if now_time - URL_CACHE[filePath]['time'] < 300:
-            print("\nAlist Raw URL Cache exists and is valid (less than 5 minutes)")
-            return flask.redirect(URL_CACHE[filePath]['url'], code=302)
+def getAlistURL(filePath) -> tuple:
+    """获取Alist Raw Url"""
     
     alistApiUrl = f"{alistServer}/api/fs/get"
     body = {
@@ -202,7 +200,7 @@ def RedirectToAlistRawUrl(filePath):
         req = requests.post(alistApiUrl, json=body, headers=header).json()
     except Exception as e:
         print(e)
-        return 500
+        return ('Alist Server Error', 500)
     
     code = req['code']
     
@@ -217,20 +215,41 @@ def RedirectToAlistRawUrl(filePath):
             else:
                 raw_url = f"{AlistPublicStorageURL}{path}"
         
+        return (raw_url, 200)
+            
+        
+    elif code == 403:
+        print("403 Forbidden, Please check your Alist Key")
+        # return flask.Response(status=403, response="403 Forbidden, Please check your Alist Key")
+        return ('403 Forbidden, Please check your Alist Key', 403)
+    else:
+        print(f"Error: {req['message']}")
+        # return flask.Response(status=500, response=req['message'])
+        return (req['message'], 500)
+
+# return Alist Raw Url or Emby Original Url
+@get_time
+def RedirectToAlistRawUrl(filePath) -> flask.Response:
+    """获取视频直链地址"""
+    
+    if filePath in URL_CACHE:
+        now_time = datetime.now().timestamp()
+        if now_time - URL_CACHE[filePath]['time'] < 300:
+            print("\nAlist Raw URL Cache exists and is valid (less than 5 minutes)")
+            return flask.redirect(URL_CACHE[filePath]['url'], code=302)
+    
+    raw_url, code = getAlistURL(filePath)
+    
+    if code == 200:
         URL_CACHE[filePath] = {
             'url': raw_url,
             'time': datetime.now().timestamp()
         }
         print("Redirected Url: " + raw_url)
         return flask.redirect(raw_url, code=302)
-            
-        
-    elif code == 403:
-        print("403 Forbidden, Please check your Alist Key")
-        return flask.Response(status=403, response="403 Forbidden, Please check your Alist Key")
     else:
-        print(f"Error: {req['message']}")
-        return flask.Response(status=500, response=req['message'])
+        return flask.Response(status=code, response=raw_url)
+    
 
 # for infuse
 @app.route('/Videos/<item_id>/<filename>', methods=['GET'])
@@ -256,15 +275,17 @@ def redirect(item_id, filename):
         print("Redirected Url: " + redirectUrl)
         return flask.redirect(f"{embyPublicURL}/preventRedirct{flask.request.full_path}", code=302)
     
+    alist_path = optimizeFilePath(fileInfo['Path'])
+    
     # 如果没有启用缓存，直接返回Alist Raw Url
     if not enableCache:
-        return RedirectToAlistRawUrl(optimizeFilePath(fileInfo['Path']))
-    
+        return RedirectToAlistRawUrl(alist_path)
+
     range_header = flask.request.headers.get('Range', '')
     if not range_header.startswith('bytes='):
         print("\nWarning: Range header is not correctly formatted.")
         print(flask.request.headers)
-        return RedirectToAlistRawUrl(optimizeFilePath(fileInfo['Path']))
+        return RedirectToAlistRawUrl(alist_path)
     
     # 解析Range头，获取请求的起始字节
     bytes_range = range_header.split('=')[1]
@@ -292,11 +313,11 @@ def redirect(item_id, filename):
             return flask.Response(getCacheFile(item_id), headers=resp_headers, status=206)
         else:
             # 启动线程缓存文件
-            future = executor.submit(putCacheFile, item_id, redirectUrl, flask.request.headers, cacheFileSize)
+            future = executor.submit(putCacheFile, item_id, alist_path, flask.request.headers, cacheFileSize)
             future.add_done_callback(lambda future: print(future.result()))
 
             # 重定向到原始URL
-            return RedirectToAlistRawUrl(optimizeFilePath(fileInfo['Path']))
+            return RedirectToAlistRawUrl(alist_path)
      
     # 当请求文件末尾章节信息时
     elif fileInfo['Size'] - start_byte < 2 * 1024 * 1024:
@@ -316,14 +337,14 @@ def redirect(item_id, filename):
             return flask.Response(getCacheFile(item_id=item_id, name=start_byte), headers=resp_headers, status=206)
         else:
             # 启动线程缓存文件
-            future = executor.submit(putCacheFile, item_id, redirectUrl, flask.request.headers, fileInfo['Size'], start_byte)
+            future = executor.submit(putCacheFile, item_id, alist_path, flask.request.headers, fileInfo['Size'], start_byte)
             future.add_done_callback(lambda future: print(future.result()))
 
             # 重定向到原始URL
-            return RedirectToAlistRawUrl(optimizeFilePath(fileInfo['Path']))
+            return RedirectToAlistRawUrl(alist_path)
     else:
         print(range_header)
-        return RedirectToAlistRawUrl(optimizeFilePath(fileInfo['Path']))
+        return RedirectToAlistRawUrl(alist_path)
 
 if __name__ == "__main__":
     app.run(port=60001, debug=True, threaded=True, host='0.0.0.0')
