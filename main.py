@@ -5,6 +5,7 @@ from config import *
 import os
 from datetime import datetime
 import concurrent.futures
+import hashlib
 
 # 创建全局线程池
 executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
@@ -42,6 +43,18 @@ def get_content_type(container):
 
     # 返回对应的Content-Type，如果未找到，返回一个默认值
     return content_types.get(container.lower(), 'application/octet-stream')
+
+def get_hash_subdirectory_from_path(file_path):
+    """
+    计算给定文件路径的MD5哈希，并返回哈希值的前两位作为子目录名称。
+
+    :param file_path: 文件的路径
+    :return: 哈希值的前两个字符，作为子目录名称
+    """
+    hasher = hashlib.md5()
+    hasher.update(file_path.encode('utf-8'))
+    hash_digest = hasher.hexdigest()
+    return hash_digest[:2], hash_digest  # 返回子目录名称和哈希值
 
 # used to get the file info from emby server
 def GetFileInfo(item_id, MediaSourceId, apiKey) -> dict:
@@ -94,12 +107,14 @@ def checkFilePath(filePath: str) -> bool:
 
 def putCacheFile(item_id, path, headers, size=52428800, startPoint=0) -> bool:
     """缓存文件"""
+    subdirname, dirname = get_hash_subdirectory_from_path(path)
+    
     if startPoint == 0:
-        cache_file_path = os.path.join(cachePath, item_id, 'cache_file')
+        cache_file_path = os.path.join(cachePath, subdirname, dirname, 'cache_file')
         size = size - 1
-        name = size
+        name = ', Cache file size is ' + size
     else:
-        cache_file_path = os.path.join(cachePath, item_id, f'cache_file_{startPoint}')
+        cache_file_path = os.path.join(cachePath, subdirname, dirname, f'cache_file_{startPoint}')
         size = ''
         name = startPoint
     print(f"\n {getCurrentTime()} - Start to cache file {name}: {item_id}")
@@ -107,7 +122,7 @@ def putCacheFile(item_id, path, headers, size=52428800, startPoint=0) -> bool:
         print(f"{getCurrentTime()}-WARNING: Cache File Already Exists or Cache File is being written. Abort.")
         return False
     else:
-        os.makedirs(os.path.join(cachePath, item_id), exist_ok=True)
+        os.makedirs(os.path.dirname(cache_file_path), exist_ok=True)
     
     # 获取Alist Raw Url
     raw_url, code = getAlistURL(path)
@@ -134,29 +149,30 @@ def putCacheFile(item_id, path, headers, size=52428800, startPoint=0) -> bool:
         print(f"{getCurrentTime()}-Cache Error {name}: Upstream return code: {resp.status_code}")
         return False
     
-def getCacheFile(item_id, name=''):
+def getCacheFile(item_id, path, name=''):
     """读取缓存文件"""
+    subdirname, dirname = get_hash_subdirectory_from_path(path)
     if name:
         name = f'cache_file_{name}'
     else:
         name = 'cache_file'
         
-    path = os.path.join(cachePath, item_id, name)
+    path = os.path.join(cachePath, subdirname, dirname, name)
     with open(f'{path}', 'rb') as f:
         data = f.read(1024 * 1024)
         while data:
             yield data
             data = f.read(1024 * 1024)
 
-def getCacheStatus(item_id, name='') -> tuple:
+def getCacheStatus(item_id, path, name='') -> tuple:
     """检查缓存文件是否存在，并检查其最后修改时间"""
-    
+    subdirname, dirname = get_hash_subdirectory_from_path(path)
     if name:
         name = f'cache_file_{name}'
     else:
         name = 'cache_file'
 
-    cache_file_path = os.path.join(cachePath, item_id, name)
+    cache_file_path = os.path.join(cachePath, subdirname, dirname, name)
     
     if os.path.exists(cache_file_path):
         # 获取文件最后修改时间
@@ -295,7 +311,7 @@ def redirect(item_id, filename):
     cacheFileSize = int(fileInfo.get('Bitrate', 52428800) / 8 * 15)
     
     if start_byte < cacheFileSize:
-        getCacheStatus_exists = getCacheStatus(item_id)
+        getCacheStatus_exists = getCacheStatus(item_id, alist_path)
         if getCacheStatus_exists:
             
             resp_headers = {
@@ -304,13 +320,13 @@ def redirect(item_id, filename):
             'Content-Range': f"bytes {start_byte}-{cacheFileSize-1}/{fileInfo['Size']}",
             'Content-Length': f'{cacheFileSize}',
             'Cache-Control': 'private, no-transform, no-cache',
-            'X-EmbyToAList-Cache': 'Hit' if getCacheStatus(item_id) else 'Miss',
+            'X-EmbyToAList-Cache': 'Hit' if getCacheStatus(item_id, alist_path) else 'Miss',
             }
             
             print("\nCached file exists and is valid")
             # 返回缓存内容和调整后的响应头
             print(range_header)
-            return flask.Response(getCacheFile(item_id), headers=resp_headers, status=206)
+            return flask.Response(getCacheFile(item_id, alist_path), headers=resp_headers, status=206)
         else:
             # 启动线程缓存文件
             future = executor.submit(putCacheFile, item_id, alist_path, flask.request.headers, cacheFileSize)
@@ -321,20 +337,20 @@ def redirect(item_id, filename):
      
     # 当请求文件末尾章节信息时
     elif fileInfo['Size'] - start_byte < 2 * 1024 * 1024:
-        if getCacheStatus(item_id, name=start_byte):
+        if getCacheStatus(item_id, path=alist_path, name=start_byte):
             resp_headers = {
             'Content-Type': get_content_type(fileInfo['Container']),
             'Accept-Ranges': 'bytes',
             'Content-Range': f"bytes {start_byte}-{fileInfo['Size']-1}/{fileInfo['Size']}",
             'Content-Length': f'{fileInfo["Size"]-start_byte}',
             'Cache-Control': 'private, no-transform, no-cache',
-            'X-EmbyToAList-Cache': 'Hit' if getCacheStatus(item_id, name=start_byte) else 'Miss',
+            'X-EmbyToAList-Cache': 'Hit' if getCacheStatus(item_id, path=alist_path, name=start_byte) else 'Miss',
             }
             
             print("\nCached file exists and is valid")
             # 返回缓存内容和调整后的响应头
             print(range_header)
-            return flask.Response(getCacheFile(item_id=item_id, name=start_byte), headers=resp_headers, status=206)
+            return flask.Response(getCacheFile(item_id=item_id, path=alist_path, name=start_byte), headers=resp_headers, status=206)
         else:
             # 启动线程缓存文件
             future = executor.submit(putCacheFile, item_id, alist_path, flask.request.headers, fileInfo['Size'], start_byte)
@@ -345,6 +361,7 @@ def redirect(item_id, filename):
     else:
         print(range_header)
         return RedirectToAlistRawUrl(alist_path)
+
 
 if __name__ == "__main__":
     app.run(port=60001, debug=True, threaded=True, host='0.0.0.0')
