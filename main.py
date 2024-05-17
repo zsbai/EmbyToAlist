@@ -104,41 +104,81 @@ def checkFilePath(filePath: str) -> bool:
             return False
     return True
 
+def readFile(filePath, startPoint=0, endPoint=None, chunk_size=1024*1024):
+    try:
+        with open(filePath, 'rb') as f:
+            f.seek(startPoint)
+            data = f.read(chunk_size)
+            if endPoint is not None:
+                while data and f.tell() <= endPoint:
+                        if f.tell() > endPoint:
+                            yield data[:endPoint - f.tell() + len(data)]
+                        else:
+                            yield data
+                        data = f.read(chunk_size)
+            else:
+                while data:
+                    yield data
+                    data = f.read(chunk_size)
+    except (FileNotFoundError, PermissionError) as e:
+        print(f"Error opening file: {e}")
 
-def putCacheFile(item_id, path, headers, size=52428800, startPoint=0) -> bool:
+
+def putCacheFile(item_id, path, headers, size=52428800, startPoint=0, fileSize=None) -> bool:
     """缓存文件"""
     subdirname, dirname = get_hash_subdirectory_from_path(path)
     
-    if startPoint == 0:
-        cache_file_path = os.path.join(cachePath, subdirname, dirname, 'cache_file')
-        size = size - 1
-        name = ', Cache file size is ' + str(size)
+    # 如果filesize不为None，endPoint为文件末尾
+    if startPoint <= size:
+        startPoint = 0
+        endPoint = size - 1
+    elif fileSize is not None:
+        endPoint = fileSize - 1
     else:
-        cache_file_path = os.path.join(cachePath, subdirname, dirname, f'cache_file_{startPoint}')
-        size = ''
-        name = startPoint
-    print(f"\n {getCurrentTime()} - Start to cache file {name}: {item_id}, file path: {cache_file_path}")
-    if os.path.exists(cache_file_path):
-        print(f"{getCurrentTime()}-WARNING: Cache File Already Exists or Cache File is being written. Abort.")
-        return False
-    else:
-        os.makedirs(os.path.dirname(cache_file_path), exist_ok=True)
-        # 创建一个空文件
-        with open(cache_file_path, 'w') as f:
-            pass
+        print(f"{getCurrentTime()}-Cache Error {startPoint}-{endPoint}, File Size is None")
+        return
     
     # 获取Alist Raw Url
     raw_url, code = getAlistURL(path)
     if code != 200:
-        print(f"{getCurrentTime()}-Cache Error {name}, Alist Return: {raw_url}")
-        os.remove(cache_file_path)
+        print(f"{getCurrentTime()}-Cache Error {startPoint}-{endPoint}, Alist Return: code: {code} and url: {raw_url}")
         return False
+    
+    # 根据起始点和缓存大小确定缓存文件路径
+    cache_file_path = os.path.join(cachePath, subdirname, dirname, f'cache_file_{startPoint}_{endPoint}')
+    print(f"\n {getCurrentTime()} - Start to cache file {startPoint}-{endPoint}: {item_id}, file path: {cache_file_path}")
+    
+    os.makedirs(os.path.dirname(cache_file_path), exist_ok=True)
+    
+    # 检查是否已有包含当前范围的缓存文件
+    for file in os.listdir(os.path.join(cachePath, subdirname, dirname)):
+        if file.startswith('cache_file_'):
+            range_start, range_end = map(int, file.split('_')[2:4])
+            
+            if startPoint >= range_start and endPoint <= range_end:
+                print(f"{getCurrentTime()}-WARNING: Cache Range Already Exists. Abort.")
+                return False
+            elif startPoint <= range_start and endPoint >= range_end:
+                full_path = os.path.join(cachePath, subdirname, dirname, file)
+                mod_time = os.path.getmtime(full_path)
+                now_time = datetime.now().timestamp()
+                # 如果文件在过去15秒内被修改过，可能仍在缓存过程中
+                # 防止重复缓存由putCacheFile负责
+                if now_time - mod_time < 15:
+                    print(f"{getCurrentTime()}-Cache Error: Cache file for range {startPoint} may is still writing.")
+                    return False
+                print(f"{getCurrentTime()}-WARNING: Existing Cache Range within new range. Deleting old cache.")
+                os.remove(os.path.join(cachePath, subdirname, dirname, file))
+    
+    # 创建一个空文件
+    with open(cache_file_path, 'w') as f:
+        pass
     
     headers = dict(headers) # Copy the headers
     headers['Host'] = raw_url.split('/')[2]
       
     # Modify the range to startPoint-first50M
-    headers['Range'] = f"bytes={startPoint}-{size}"
+    headers['Range'] = f"bytes={startPoint}-{endPoint}"
 
     resp = requests.get(raw_url, headers=headers, stream=True)
     if resp.status_code == 206: 
@@ -147,51 +187,48 @@ def putCacheFile(item_id, path, headers, size=52428800, startPoint=0) -> bool:
             for chunk in resp.iter_content(chunk_size=1024):
                 f.write(chunk)
                 
-        print(f"{getCurrentTime()}-Cache file {name}: {item_id} has been written, file path: {cache_file_path}")
+        print(f"{getCurrentTime()}-Cache file {startPoint}-{endPoint}: {item_id} has been written, file path: {cache_file_path}")
         return True
     else:
-        print(f"{getCurrentTime()}-Cache Error {name}: Upstream return code: {resp.status_code}")
+        print(f"{getCurrentTime()}-Cache Error {startPoint}-{endPoint}: Upstream return code: {resp.status_code}")
         os.remove(cache_file_path)
         return False
     
-def getCacheFile(item_id, path, name=''):
+def getCacheFile(item_id, path, startPoint=0, endPoint=None):
     """读取缓存文件"""
     subdirname, dirname = get_hash_subdirectory_from_path(path)
-    if name:
-        name = f'cache_file_{name}'
-    else:
-        name = 'cache_file'
-        
-    path = os.path.join(cachePath, subdirname, dirname, name)
-    with open(f'{path}', 'rb') as f:
-        data = f.read(1024 * 1024)
-        while data:
-            yield data
-            data = f.read(1024 * 1024)
+    
+    # 查找与 startPoint 匹配的缓存文件，endPoint 为文件名的一部分
+    for file in os.listdir(os.path.join(cachePath, subdirname, dirname)):
+        if file.startswith('cache_file_'):
+            range_start, range_end = map(int, file.split('_')[2:4])
+            if range_start <= startPoint <= range_end:
+                if endPoint is not None and endPoint > range_end:
+                    return readFile(os.path.join(cachePath, subdirname, dirname, file), startPoint-range_start, None)
+                elif endPoint is not None and endPoint <= range_end:
+                    return readFile(os.path.join(cachePath, subdirname, dirname, file), startPoint-range_start, endPoint-startPoint)
+                else:
+                    return readFile(os.path.join(cachePath, subdirname, dirname, file), startPoint-range_start, endPoint)
+    print(f"{getCurrentTime()}-Cache Error: There is no cache file in the cache directory: {path}.")
+    return False
 
-def getCacheStatus(item_id, path, name='') -> tuple:
+def getCacheStatus(item_id, path, startPoint=0) -> tuple:
     """检查缓存文件是否存在，并检查其最后修改时间"""
     subdirname, dirname = get_hash_subdirectory_from_path(path)
-    if name:
-        name = f'cache_file_{name}'
-    else:
-        name = 'cache_file'
-
-    cache_file_path = os.path.join(cachePath, subdirname, dirname, name)
     
-    if os.path.exists(cache_file_path):
-        # 获取文件最后修改时间
-        mod_time = os.path.getmtime(cache_file_path)
-        now_time = datetime.now().timestamp()
-        
-        # 如果文件在过去15秒内被修改过，可能仍在缓存过程中
-        # 防止重复缓存由putCacheFile负责
-        if now_time - mod_time < 15:
-            return False
-        else:
-            return True
-    else:
+    if os.path.exists(os.path.join(cachePath, subdirname, dirname)) is False:
+        print(f"{getCurrentTime()}-Cache Error: Cache directory does not exist: {os.path.join(cachePath, subdirname, dirname)}")
         return False
+    
+    # 查找与 startPoint 匹配的缓存文件，endPoint 为文件名的一部分
+    for file in os.listdir(os.path.join(cachePath, subdirname, dirname)):
+        if file.startswith('cache_file_'):
+            range_start, range_end = map(int, file.split('_')[2:4])
+            if range_start <= startPoint <= range_end:
+                return True
+    
+    print(f"{getCurrentTime()}-Cache Error: Cache file for range {startPoint} not found.")
+    return False
 
 def extract_api_key():
     """从请求中提取API密钥"""
@@ -315,38 +352,39 @@ def redirect(item_id, filename):
         start_byte = int(bytes_range[:-1])
         end_byte = None
     else:
-        start_byte = int(bytes_range.split('-')[0])
-        end_byte = int(bytes_range.split('-')[:-1])
+        start_byte, end_byte = map(int, bytes_range.split('-'))
     
     # 获取缓存15秒的文件大小， 并取整
     cacheFileSize = int(fileInfo.get('Bitrate', 52428800) / 8 * 15)
     
     if start_byte < cacheFileSize:
-        if not end_byte:
-            end_byte = cacheFileSize - 1
-            respFileSize = cacheFileSize
+        if end_byte is None:
+            # 响应头中的end byte
+            resp_end_byte = cacheFileSize - 1
+            respFileSize = resp_end_byte - start_byte + 1
         else:
+            resp_end_byte = end_byte
             respFileSize = end_byte - start_byte + 1
         
-        getCacheStatus_exists = getCacheStatus(item_id, alist_path)
+        getCacheStatus_exists = getCacheStatus(item_id, alist_path, start_byte)
         if getCacheStatus_exists:
             
             resp_headers = {
             'Content-Type': get_content_type(fileInfo['Container']),
             'Accept-Ranges': 'bytes',
-            'Content-Range': f"bytes {start_byte}-{end_byte}/{fileInfo['Size']}",
+            'Content-Range': f"bytes {start_byte}-{resp_end_byte}/{fileInfo['Size']}",
             'Content-Length': f'{respFileSize}',
             'Cache-Control': 'private, no-transform, no-cache',
-            'X-EmbyToAList-Cache': 'Hit' if getCacheStatus(item_id, alist_path) else 'Miss',
+            'X-EmbyToAList-Cache': 'Hit',
             }
             
             print("\nCached file exists and is valid")
             # 返回缓存内容和调整后的响应头
             print(range_header)
-            return flask.Response(getCacheFile(item_id, alist_path), headers=resp_headers, status=206)
+            return flask.Response(getCacheFile(item_id, alist_path, start_byte, cacheFileSize), headers=resp_headers, status=206)
         else:
             # 启动线程缓存文件
-            future = executor.submit(putCacheFile, item_id, alist_path, flask.request.headers, cacheFileSize)
+            future = executor.submit(putCacheFile, item_id, alist_path, flask.request.headers, cacheFileSize, start_byte)
             future.add_done_callback(lambda future: print(future.result()))
 
             # 重定向到原始URL
@@ -354,23 +392,23 @@ def redirect(item_id, filename):
      
     # 当请求文件末尾章节信息时
     elif fileInfo['Size'] - start_byte < 2 * 1024 * 1024:
-        if getCacheStatus(item_id, path=alist_path, name=start_byte):
+        if getCacheStatus(item_id, path=alist_path, startPoint=start_byte):
             resp_headers = {
             'Content-Type': get_content_type(fileInfo['Container']),
             'Accept-Ranges': 'bytes',
             'Content-Range': f"bytes {start_byte}-{fileInfo['Size']-1}/{fileInfo['Size']}",
             'Content-Length': f'{fileInfo["Size"]-start_byte}',
             'Cache-Control': 'private, no-transform, no-cache',
-            'X-EmbyToAList-Cache': 'Hit' if getCacheStatus(item_id, path=alist_path, name=start_byte) else 'Miss',
+            'X-EmbyToAList-Cache': 'Hit',
             }
             
             print("\nCached file exists and is valid")
             # 返回缓存内容和调整后的响应头
             print(range_header)
-            return flask.Response(getCacheFile(item_id=item_id, path=alist_path, name=start_byte), headers=resp_headers, status=206)
+            return flask.Response(getCacheFile(item_id=item_id, path=alist_path, startPoint=start_byte, endPoint=end_byte), headers=resp_headers, status=206)
         else:
             # 启动线程缓存文件
-            future = executor.submit(putCacheFile, item_id, alist_path, flask.request.headers, fileInfo['Size'], start_byte)
+            future = executor.submit(putCacheFile, item_id, alist_path, flask.request.headers, 0, start_byte, fileInfo['Size'])
             future.add_done_callback(lambda future: print(future.result()))
 
             # 重定向到原始URL
