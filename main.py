@@ -25,8 +25,8 @@ def get_time(func):
         return result
     return wrapper
 
-# 获取当前时间，并格式化为包含毫秒的字符串
 def getCurrentTime():
+    """获取当前时间，并格式化为包含毫秒的字符串"""
     return datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
 
 def get_content_type(container):
@@ -112,22 +112,26 @@ def putCacheFile(item_id, path, headers, size=52428800, startPoint=0) -> bool:
     if startPoint == 0:
         cache_file_path = os.path.join(cachePath, subdirname, dirname, 'cache_file')
         size = size - 1
-        name = ', Cache file size is ' + size
+        name = ', Cache file size is ' + str(size)
     else:
         cache_file_path = os.path.join(cachePath, subdirname, dirname, f'cache_file_{startPoint}')
         size = ''
         name = startPoint
-    print(f"\n {getCurrentTime()} - Start to cache file {name}: {item_id}")
+    print(f"\n {getCurrentTime()} - Start to cache file {name}: {item_id}, file path: {cache_file_path}")
     if os.path.exists(cache_file_path):
         print(f"{getCurrentTime()}-WARNING: Cache File Already Exists or Cache File is being written. Abort.")
         return False
     else:
         os.makedirs(os.path.dirname(cache_file_path), exist_ok=True)
+        # 创建一个空文件
+        with open(cache_file_path, 'w') as f:
+            pass
     
     # 获取Alist Raw Url
     raw_url, code = getAlistURL(path)
     if code != 200:
         print(f"{getCurrentTime()}-Cache Error {name}, Alist Return: {raw_url}")
+        os.remove(cache_file_path)
         return False
     
     headers = dict(headers) # Copy the headers
@@ -143,10 +147,11 @@ def putCacheFile(item_id, path, headers, size=52428800, startPoint=0) -> bool:
             for chunk in resp.iter_content(chunk_size=1024):
                 f.write(chunk)
                 
-        print(f"{getCurrentTime()}-Cache file {name}: {item_id} has been written")
+        print(f"{getCurrentTime()}-Cache file {name}: {item_id} has been written, file path: {cache_file_path}")
         return True
     else:
         print(f"{getCurrentTime()}-Cache Error {name}: Upstream return code: {resp.status_code}")
+        os.remove(cache_file_path)
         return False
     
 def getCacheFile(item_id, path, name=''):
@@ -305,20 +310,32 @@ def redirect(item_id, filename):
     
     # 解析Range头，获取请求的起始字节
     bytes_range = range_header.split('=')[1]
-    start_byte = int(bytes_range.split('-')[0])
+    # start_byte = int(bytes_range.split('-')[0])
+    if bytes_range.endswith('-'):
+        start_byte = int(bytes_range[:-1])
+        end_byte = None
+    else:
+        start_byte = int(bytes_range.split('-')[0])
+        end_byte = int(bytes_range.split('-')[:-1])
     
     # 获取缓存15秒的文件大小， 并取整
     cacheFileSize = int(fileInfo.get('Bitrate', 52428800) / 8 * 15)
     
     if start_byte < cacheFileSize:
+        if not end_byte:
+            end_byte = cacheFileSize - 1
+            respFileSize = cacheFileSize
+        else:
+            respFileSize = end_byte - start_byte + 1
+        
         getCacheStatus_exists = getCacheStatus(item_id, alist_path)
         if getCacheStatus_exists:
             
             resp_headers = {
             'Content-Type': get_content_type(fileInfo['Container']),
             'Accept-Ranges': 'bytes',
-            'Content-Range': f"bytes {start_byte}-{cacheFileSize-1}/{fileInfo['Size']}",
-            'Content-Length': f'{cacheFileSize}',
+            'Content-Range': f"bytes {start_byte}-{end_byte}/{fileInfo['Size']}",
+            'Content-Length': f'{respFileSize}',
             'Cache-Control': 'private, no-transform, no-cache',
             'X-EmbyToAList-Cache': 'Hit' if getCacheStatus(item_id, alist_path) else 'Miss',
             }
