@@ -358,13 +358,20 @@ def redirect(item_id, filename):
     cacheFileSize = int(fileInfo.get('Bitrate', 52428800) / 8 * 15)
     
     if start_byte < cacheFileSize:
+        
+        if start_byte == 0:
+            for user_agent in cacheClientBlacklist:
+                if user_agent in flask.request.headers.get('User-Agent', '').lower():
+                    print(f"\nUser-Agent: {user_agent} is in the blacklist. Redirecting to Alist Raw Url.")
+                    return RedirectToAlistRawUrl(alist_path)
+        
         if end_byte is None:
             # 响应头中的end byte
             resp_end_byte = cacheFileSize - 1
             respFileSize = resp_end_byte - start_byte + 1
         else:
             resp_end_byte = end_byte
-            respFileSize = end_byte - start_byte + 1
+            respFileSize = resp_end_byte - start_byte + 1
         
         getCacheStatus_exists = getCacheStatus(item_id, alist_path, start_byte)
         if getCacheStatus_exists:
