@@ -1,5 +1,4 @@
 # config.py
-
 embyServer = "http://127.0.0.1:8096"
 emby_key = ""
 alistServer = "http://127.0.0.1:5244"
@@ -23,7 +22,7 @@ notRedirectPaths = ['/mnt/localpath/']
 # it's recommended to set convertSpecialChars to True.
 # This is because rclone converts certain special characters during the upload process, but displays the original characters when the files are mounted.
 convertSpecialChars = False
-specialCharsList = ['？','：']
+specialCharsList = ['？', '！', '：']
 
 # this configuration is for the situation that the mount path is not the same as the alist path
 # for example, in the emby server, the video path is /mnt/movie/xxx, but in the alist server, the video path is /movie/xxx
