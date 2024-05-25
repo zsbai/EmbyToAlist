@@ -70,8 +70,8 @@ gunicorn main:app -c ./gunicorn.config.py
 程序默认监听 60001 端口
 
 ```
-location ~* ^/preventRedirct/(.*)$ {
-    rewrite ^/preventRedirct/(.*)$ /$1 break;
+location ~* ^/preventRedirect/(.*)$ {
+    rewrite ^/preventRedirect/(.*)$ /$1 break;
     proxy_pass http://127.0.0.1:8096;
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;

@@ -11,8 +11,8 @@ alist_key = ""
 # Example: https://api.example.com/onedrive/
 AlistPublicStorageURL = ""
 
-# 该配置用于决定最终返回 “本地路径” 给客户端的视频地址，默认将添加 “/preventRedirct” 路径
-# 如：https://emby.example.com/preventRedirct/xxx/xxx.mp4
+# 该配置用于决定最终返回 “本地路径” 给客户端的视频地址，默认将添加 “/preventRedirect” 路径
+# 如：https://emby.example.com/preventRedirect/xxx/xxx.mp4
 # 默认请填写 Emby 的公网域名
 embyPublicURL = "https://emby.example.com"
 

@@ -25,12 +25,12 @@ def get_time(func):
         return result
     return wrapper
 
-def getCurrentTime():
+def get_current_time():
     """获取当前时间，并格式化为包含毫秒的字符串"""
     return datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
 
 def get_content_type(container):
-    # 容器映射到Content-Type
+    """文件格式对应的Content-Type映射"""
     content_types = {
         'mp4': 'video/mp4',
         'webm': 'video/webm',
@@ -38,7 +38,8 @@ def get_content_type(container):
         'avi': 'video/x-msvideo',
         'mpeg': 'video/mpeg',
         'mov': 'video/quicktime',
-        'mkv': 'video/x-matroska'
+        'mkv': 'video/x-matroska',
+        'ts': 'video/mp2t',
     }
 
     # 返回对应的Content-Type，如果未找到，返回一个默认值
@@ -57,7 +58,14 @@ def get_hash_subdirectory_from_path(file_path):
     return hash_digest[:2], hash_digest  # 返回子目录名称和哈希值
 
 # used to get the file info from emby server
-def GetFileInfo(item_id, MediaSourceId, apiKey) -> dict:
+def get_file_info(item_id, MediaSourceId, apiKey) -> dict:
+    """
+    从Emby服务器获取文件信息
+    
+    :param item_id: Emby Item ID
+    :param MediaSourceId: Emby MediaSource ID
+    :param apiKey: Emby API Key
+    :return: 包含文件信息的字典"""
     data = {}
     url = f"{embyServer}/emby/Items/{item_id}/PlaybackInfo?MediaSourceId={MediaSourceId}&api_key={apiKey}"
     print("\n" + url)
@@ -78,33 +86,51 @@ def GetFileInfo(item_id, MediaSourceId, apiKey) -> dict:
     data['Message'] = "Can't match MediaSourceId"
     return data
 
-def optimizeFilePath(filePath, mountPathPrefix=mountPathPrefix):
+def transform_file_path(file_path, mountPathPrefix=mountPathPrefix):
+    """
+    转换 rclone 文件路径，以匹配Alist的路径格式
+    
+    :param file_path: 文件路径
+    :param mountPathPrefix: 挂载路径前缀
+    :return: 转换后的文件路径
+    """
     if convertMountPath:
         if mountPathPrefix.endswith("/"):
             mountPathPrefix = mountPathPrefix.rstrip("/")
-        if filePath.startswith(mountPathPrefix):
-            filePath = filePath[len(mountPathPrefix):]
+        if file_path.startswith(mountPathPrefix):
+            file_path = file_path[len(mountPathPrefix):]
         else:
-            print(f"Error: mountPathPrefix: {mountPathPrefix} is not in filePath: {filePath}\nPlease check your mountPathPrefix configuration in main.py")
+            print(f"Error: mountPathPrefix: {mountPathPrefix} is not in filePath: {file_path}\nPlease check your mountPathPrefix configuration in main.py")
             
     if convertSpecialChars:
         for char in specialCharsList:
-            if char in filePath:
-                filePath = filePath.replace(char, '‛'+char)
+            if char in file_path:
+                file_path = file_path.replace(char, '‛'+char)
             
-    if convertMountPath or convertSpecialChars: print(f"\nProcessed FilePath: {filePath}")
-    return filePath
+    if convertMountPath or convertSpecialChars: print(f"\nProcessed FilePath: {file_path}")
+    return file_path
 
 # True means return Alist Raw Url, False means return Emby Original Url
-def checkFilePath(filePath: str) -> bool:
-    """检查文件路径是否在notRedirectPaths中"""
+def should_redirect_to_alist(filePath: str) -> bool:
+    """
+    检查文件路径是否在不需要重定向的路径中
+    """
     for path in notRedirectPaths:
         if filePath.startswith(path):
             print(f"\nFilePath is in notRedirectPaths, return Emby Original Url")
             return False
     return True
 
-def readFile(filePath, startPoint=0, endPoint=None, chunk_size=1024*1024):
+def read_file(filePath, startPoint=0, endPoint=None, chunk_size=1024*1024):
+    """
+    读取文件的指定范围，并返回生成器
+    
+    :param filePath: 文件路径
+    :param startPoint: 文件读取起始点
+    :param endPoint: 文件读取结束点，None 表示文件末尾
+    :param chunk_size: 每次读取的字节数，默认为 1MB
+    :return: 生成器，每次返回 chunk_size 大小的数据
+    """
     try:
         with open(filePath, 'rb') as f:
             f.seek(startPoint)
@@ -124,29 +150,39 @@ def readFile(filePath, startPoint=0, endPoint=None, chunk_size=1024*1024):
         print(f"Error opening file: {e}")
 
 
-def putCacheFile(item_id, path, headers, size=52428800, startPoint=0, fileSize=None) -> bool:
-    """缓存文件"""
+def write_cache_file(item_id, path, req_header, size=52428800, start_point=0, file_size=None) -> bool:
+    """
+    写入缓存文件
+    
+    :param item_id: Emby Item ID
+    :param path: 文件路径
+    :param req_header: 请求头
+    :param size: 缓存文件大小，默认为 50MB
+    :param start_point: 缓存文件的起始点
+    :param file_size: 文件大小
+    :return: 缓存是否成功
+    """
     subdirname, dirname = get_hash_subdirectory_from_path(path)
     
     # 如果filesize不为None，endPoint为文件末尾
-    if startPoint <= size:
-        startPoint = 0
-        endPoint = size - 1
-    elif fileSize is not None:
-        endPoint = fileSize - 1
+    if start_point <= size:
+        start_point = 0
+        end_point = size - 1
+    elif file_size is not None:
+        end_point = file_size - 1
     else:
-        print(f"{getCurrentTime()}-Cache Error {startPoint}-{endPoint}, File Size is None")
+        print(f"{get_current_time()}-Cache Error {start_point}-{end_point}, File Size is None")
         return
     
     # 获取Alist Raw Url
-    raw_url, code = getAlistURL(path)
+    raw_url, code = get_alist_raw_url(path)
     if code != 200:
-        print(f"{getCurrentTime()}-Cache Error {startPoint}-{endPoint}, Alist Return: code: {code} and url: {raw_url}")
+        print(f"{get_current_time()}-Cache Error {start_point}-{end_point}, Alist Return: code: {code} and url: {raw_url}")
         return False
     
     # 根据起始点和缓存大小确定缓存文件路径
-    cache_file_path = os.path.join(cachePath, subdirname, dirname, f'cache_file_{startPoint}_{endPoint}')
-    print(f"\n {getCurrentTime()} - Start to cache file {startPoint}-{endPoint}: {item_id}, file path: {cache_file_path}")
+    cache_file_path = os.path.join(cachePath, subdirname, dirname, f'cache_file_{start_point}_{end_point}')
+    print(f"\n {get_current_time()} - Start to cache file {start_point}-{end_point}: {item_id}, file path: {cache_file_path}")
     
     os.makedirs(os.path.dirname(cache_file_path), exist_ok=True)
     
@@ -155,79 +191,94 @@ def putCacheFile(item_id, path, headers, size=52428800, startPoint=0, fileSize=N
         if file.startswith('cache_file_'):
             range_start, range_end = map(int, file.split('_')[2:4])
             
-            if startPoint >= range_start and endPoint <= range_end:
-                print(f"{getCurrentTime()}-WARNING: Cache Range Already Exists. Abort.")
+            if start_point >= range_start and end_point <= range_end:
+                print(f"{get_current_time()}-WARNING: Cache Range Already Exists. Abort.")
                 return False
-            elif startPoint <= range_start and endPoint >= range_end:
+            elif start_point <= range_start and end_point >= range_end:
                 full_path = os.path.join(cachePath, subdirname, dirname, file)
                 mod_time = os.path.getmtime(full_path)
                 now_time = datetime.now().timestamp()
                 # 如果文件在过去15秒内被修改过，可能仍在缓存过程中
                 # 防止重复缓存由putCacheFile负责
                 if now_time - mod_time < 15:
-                    print(f"{getCurrentTime()}-Cache Error: Cache file for range {startPoint} may is still writing.")
+                    print(f"{get_current_time()}-Cache Error: Cache file for range {start_point} may is still writing.")
                     return False
-                print(f"{getCurrentTime()}-WARNING: Existing Cache Range within new range. Deleting old cache.")
+                print(f"{get_current_time()}-WARNING: Existing Cache Range within new range. Deleting old cache.")
                 os.remove(os.path.join(cachePath, subdirname, dirname, file))
     
     # 创建一个空文件
     with open(cache_file_path, 'w') as f:
         pass
     
-    headers = dict(headers) # Copy the headers
-    headers['Host'] = raw_url.split('/')[2]
+    req_header = dict(req_header) # Copy the headers
+    req_header['Host'] = raw_url.split('/')[2]
       
     # Modify the range to startPoint-first50M
-    headers['Range'] = f"bytes={startPoint}-{endPoint}"
+    req_header['Range'] = f"bytes={start_point}-{end_point}"
 
-    resp = requests.get(raw_url, headers=headers, stream=True)
+    resp = requests.get(raw_url, headers=req_header, stream=True)
     if resp.status_code == 206: 
         # print(f"Start to write cache file: {item_id}")
         with open (cache_file_path, 'wb') as f:
             for chunk in resp.iter_content(chunk_size=1024):
                 f.write(chunk)
                 
-        print(f"{getCurrentTime()}-Cache file {startPoint}-{endPoint}: {item_id} has been written, file path: {cache_file_path}")
+        print(f"{get_current_time()}-Cache file {start_point}-{end_point}: {item_id} has been written, file path: {cache_file_path}")
         return True
     else:
-        print(f"{getCurrentTime()}-Cache Error {startPoint}-{endPoint}: Upstream return code: {resp.status_code}")
+        print(f"{get_current_time()}-Cache Error {start_point}-{end_point}: Upstream return code: {resp.status_code}")
         os.remove(cache_file_path)
         return False
     
-def getCacheFile(item_id, path, startPoint=0, endPoint=None):
-    """读取缓存文件"""
+def read_cache_file(item_id, path, start_point=0, end_point=None):
+    """
+    读取缓存文件
+    
+    :param item_id: Emby Item ID
+    :param path: 文件路径
+    :param start_point: 缓存文件的起始点
+    :param end_point: 缓存文件的结束点
+    :return: 缓存文件的内容
+    """
     subdirname, dirname = get_hash_subdirectory_from_path(path)
     
     # 查找与 startPoint 匹配的缓存文件，endPoint 为文件名的一部分
     for file in os.listdir(os.path.join(cachePath, subdirname, dirname)):
         if file.startswith('cache_file_'):
             range_start, range_end = map(int, file.split('_')[2:4])
-            if range_start <= startPoint <= range_end:
-                if endPoint is not None and endPoint > range_end:
-                    return readFile(os.path.join(cachePath, subdirname, dirname, file), startPoint-range_start, None)
-                elif endPoint is not None and endPoint <= range_end:
-                    return readFile(os.path.join(cachePath, subdirname, dirname, file), startPoint-range_start, endPoint-startPoint)
+            if range_start <= start_point <= range_end:
+                if end_point is not None and end_point > range_end:
+                    return read_file(os.path.join(cachePath, subdirname, dirname, file), start_point-range_start, None)
+                elif end_point is not None and end_point <= range_end:
+                    return read_file(os.path.join(cachePath, subdirname, dirname, file), start_point-range_start, end_point-start_point)
                 else:
-                    return readFile(os.path.join(cachePath, subdirname, dirname, file), startPoint-range_start, endPoint)
-    print(f"{getCurrentTime()}-Cache Error: There is no cache file in the cache directory: {path}.")
+                    return read_file(os.path.join(cachePath, subdirname, dirname, file), start_point-range_start, end_point)
+    print(f"{get_current_time()}-Cache Error: There is no cache file in the cache directory: {path}.")
     return False
 
-def getCacheStatus(item_id, path, startPoint=0) -> tuple:
-    """检查缓存文件是否存在，并检查其最后修改时间"""
+def get_cache_status(item_id, path, start_point=0) -> bool:
+    """
+    检查缓存文件是否存在
+    
+    :param item_id: Emby Item ID
+    :param path: 文件路径
+    :param start_point: 缓存文件的起始点
+    :return: 缓存文件是否存在
+    """
     subdirname, dirname = get_hash_subdirectory_from_path(path)
     
     if os.path.exists(os.path.join(cachePath, subdirname, dirname)) is False:
-        print(f"{getCurrentTime()}-Cache Error: Cache directory does not exist: {os.path.join(cachePath, subdirname, dirname)}")
+        print(f"{get_current_time()}-Cache Error: Cache directory does not exist: {os.path.join(cachePath, subdirname, dirname)}")
         return False
     
     # 查找与 startPoint 匹配的缓存文件，endPoint 为文件名的一部分
     for file in os.listdir(os.path.join(cachePath, subdirname, dirname)):
         if file.startswith('cache_file_'):
             range_start, range_end = map(int, file.split('_')[2:4])
-            if range_start <= startPoint <= range_end:
+            if range_start <= start_point <= range_end:
                 return True
     
-    print(f"{getCurrentTime()}-Cache Error: Cache file for range {startPoint} not found.")
+    print(f"{get_current_time()}-Cache Error: Cache file for range {start_point} not found.")
     return False
 
 def extract_api_key():
@@ -241,8 +292,8 @@ def extract_api_key():
                 api_key = match_token.group(1)
     return api_key or emby_key
 
-def getAlistURL(filePath) -> tuple:
-    """获取Alist Raw Url"""
+def get_alist_raw_url(filePath) -> tuple:
+    """根据文件路径获取Alist Raw Url"""
     
     alistApiUrl = f"{alistServer}/api/fs/get"
     body = {
@@ -274,8 +325,7 @@ def getAlistURL(filePath) -> tuple:
                 raw_url = f"{AlistPublicStorageURL}{path}"
         
         return (raw_url, 200)
-            
-        
+               
     elif code == 403:
         print("403 Forbidden, Please check your Alist Key")
         # return flask.Response(status=403, response="403 Forbidden, Please check your Alist Key")
@@ -287,19 +337,19 @@ def getAlistURL(filePath) -> tuple:
 
 # return Alist Raw Url or Emby Original Url
 @get_time
-def RedirectToAlistRawUrl(filePath) -> flask.Response:
+def redirect_to_alist_raw_url(file_path) -> flask.Response:
     """获取视频直链地址"""
     
-    if filePath in URL_CACHE:
+    if file_path in URL_CACHE:
         now_time = datetime.now().timestamp()
-        if now_time - URL_CACHE[filePath]['time'] < 300:
+        if now_time - URL_CACHE[file_path]['time'] < 300:
             print("\nAlist Raw URL Cache exists and is valid (less than 5 minutes)")
-            return flask.redirect(URL_CACHE[filePath]['url'], code=302)
+            return flask.redirect(URL_CACHE[file_path]['url'], code=302)
     
-    raw_url, code = getAlistURL(filePath)
+    raw_url, code = get_alist_raw_url(file_path)
     
     if code == 200:
-        URL_CACHE[filePath] = {
+        URL_CACHE[file_path] = {
             'url': raw_url,
             'time': datetime.now().timestamp()
         }
@@ -316,34 +366,34 @@ def RedirectToAlistRawUrl(filePath) -> flask.Response:
 def redirect(item_id, filename):
     # Example: https://emby.example.com/emby/Videos/xxxxx/original.mp4?MediaSourceId=xxxxx&api_key=xxxxx
     
-    apiKey = extract_api_key()
-    fileInfo = GetFileInfo(item_id, flask.request.args.get('MediaSourceId'), apiKey)
+    api_key = extract_api_key()
+    file_info = get_file_info(item_id, flask.request.args.get('MediaSourceId'), api_key)
     
-    if fileInfo['Status'] == "Error":
-        print(fileInfo['Message'])
-        return flask.Response(status=500, response=fileInfo['Message'])
+    if file_info['Status'] == "Error":
+        print(file_info['Message'])
+        return flask.Response(status=500, response=file_info['Message'])
     
     
-    print(f"\n{getCurrentTime()} - Requested Item ID: {item_id}")
-    print("MediaFile Mount Path: " + fileInfo['Path'])
+    print(f"\n{get_current_time()} - Requested Item ID: {item_id}")
+    print("MediaFile Mount Path: " + file_info['Path'])
     
     # if checkFilePath return False：return Emby originalUrl
-    if not checkFilePath(fileInfo['Path']):
-        redirectUrl = f"{embyPublicURL}/preventRedirct{flask.request.full_path}"
-        print("Redirected Url: " + redirectUrl)
-        return flask.redirect(f"{embyPublicURL}/preventRedirct{flask.request.full_path}", code=302)
+    if not should_redirect_to_alist(file_info['Path']):
+        redirected_url = f"{embyPublicURL}/preventRedirect{flask.request.full_path}"
+        print("Redirected Url: " + redirected_url)
+        return flask.redirect(redirected_url, code=302)
     
-    alist_path = optimizeFilePath(fileInfo['Path'])
+    alist_path = transform_file_path(file_info['Path'])
     
     # 如果没有启用缓存，直接返回Alist Raw Url
     if not enableCache:
-        return RedirectToAlistRawUrl(alist_path)
+        return redirect_to_alist_raw_url(alist_path)
 
     range_header = flask.request.headers.get('Range', '')
     if not range_header.startswith('bytes='):
         print("\nWarning: Range header is not correctly formatted.")
         print(flask.request.headers)
-        return RedirectToAlistRawUrl(alist_path)
+        return redirect_to_alist_raw_url(alist_path)
     
     # 解析Range头，获取请求的起始字节
     bytes_range = range_header.split('=')[1]
@@ -355,32 +405,31 @@ def redirect(item_id, filename):
         start_byte, end_byte = map(int, bytes_range.split('-'))
     
     # 获取缓存15秒的文件大小， 并取整
-    cacheFileSize = int(fileInfo.get('Bitrate', 52428800) / 8 * 15)
+    cacheFileSize = int(file_info.get('Bitrate', 52428800) / 8 * 15)
     
     if start_byte < cacheFileSize:
         
         if start_byte == 0:
-            for user_agent in cacheClientBlacklist:
-                if user_agent in flask.request.headers.get('User-Agent', '').lower():
-                    print(f"\nUser-Agent: {user_agent} is in the blacklist. Redirecting to Alist Raw Url.")
-                    return RedirectToAlistRawUrl(alist_path)
+            if any(user_agent.lower() in flask.request.headers.get('User-Agent', '').lower() for user_agent in cacheClientBlacklist):
+                print("Cache is disabled for this client")
+                return redirect_to_alist_raw_url(alist_path)
         
         if end_byte is None:
             # 响应头中的end byte
             resp_end_byte = cacheFileSize - 1
-            respFileSize = resp_end_byte - start_byte + 1
+            resp_file_size = resp_end_byte - start_byte + 1
         else:
             resp_end_byte = end_byte
-            respFileSize = resp_end_byte - start_byte + 1
+            resp_file_size = resp_end_byte - start_byte + 1
         
-        getCacheStatus_exists = getCacheStatus(item_id, alist_path, start_byte)
+        getCacheStatus_exists = get_cache_status(item_id, alist_path, start_byte)
         if getCacheStatus_exists:
             
             resp_headers = {
-            'Content-Type': get_content_type(fileInfo['Container']),
+            'Content-Type': get_content_type(file_info['Container']),
             'Accept-Ranges': 'bytes',
-            'Content-Range': f"bytes {start_byte}-{resp_end_byte}/{fileInfo['Size']}",
-            'Content-Length': f'{respFileSize}',
+            'Content-Range': f"bytes {start_byte}-{resp_end_byte}/{file_info['Size']}",
+            'Content-Length': f'{resp_file_size}',
             'Cache-Control': 'private, no-transform, no-cache',
             'X-EmbyToAList-Cache': 'Hit',
             }
@@ -388,23 +437,23 @@ def redirect(item_id, filename):
             print("\nCached file exists and is valid")
             # 返回缓存内容和调整后的响应头
             print(range_header)
-            return flask.Response(getCacheFile(item_id, alist_path, start_byte, cacheFileSize), headers=resp_headers, status=206)
+            return flask.Response(read_cache_file(item_id, alist_path, start_byte, cacheFileSize), headers=resp_headers, status=206)
         else:
             # 启动线程缓存文件
-            future = executor.submit(putCacheFile, item_id, alist_path, flask.request.headers, cacheFileSize, start_byte)
+            future = executor.submit(write_cache_file, item_id, alist_path, flask.request.headers, cacheFileSize, start_byte)
             future.add_done_callback(lambda future: print(future.result()))
 
             # 重定向到原始URL
-            return RedirectToAlistRawUrl(alist_path)
+            return redirect_to_alist_raw_url(alist_path)
      
     # 当请求文件末尾章节信息时
-    elif fileInfo['Size'] - start_byte < 2 * 1024 * 1024:
-        if getCacheStatus(item_id, path=alist_path, startPoint=start_byte):
+    elif file_info['Size'] - start_byte < 2 * 1024 * 1024:
+        if get_cache_status(item_id, path=alist_path, start_point=start_byte):
             resp_headers = {
-            'Content-Type': get_content_type(fileInfo['Container']),
+            'Content-Type': get_content_type(file_info['Container']),
             'Accept-Ranges': 'bytes',
-            'Content-Range': f"bytes {start_byte}-{fileInfo['Size']-1}/{fileInfo['Size']}",
-            'Content-Length': f'{fileInfo["Size"]-start_byte}',
+            'Content-Range': f"bytes {start_byte}-{file_info['Size']-1}/{file_info['Size']}",
+            'Content-Length': f'{file_info["Size"]-start_byte}',
             'Cache-Control': 'private, no-transform, no-cache',
             'X-EmbyToAList-Cache': 'Hit',
             }
@@ -412,17 +461,17 @@ def redirect(item_id, filename):
             print("\nCached file exists and is valid")
             # 返回缓存内容和调整后的响应头
             print(range_header)
-            return flask.Response(getCacheFile(item_id=item_id, path=alist_path, startPoint=start_byte, endPoint=end_byte), headers=resp_headers, status=206)
+            return flask.Response(read_cache_file(item_id=item_id, path=alist_path, start_point=start_byte, end_point=end_byte), headers=resp_headers, status=206)
         else:
             # 启动线程缓存文件
-            future = executor.submit(putCacheFile, item_id, alist_path, flask.request.headers, 0, start_byte, fileInfo['Size'])
+            future = executor.submit(write_cache_file, item_id, alist_path, flask.request.headers, 0, start_byte, file_info['Size'])
             future.add_done_callback(lambda future: print(future.result()))
 
             # 重定向到原始URL
-            return RedirectToAlistRawUrl(alist_path)
+            return redirect_to_alist_raw_url(alist_path)
     else:
         print(range_header)
-        return RedirectToAlistRawUrl(alist_path)
+        return redirect_to_alist_raw_url(alist_path)
 
 
 if __name__ == "__main__":
