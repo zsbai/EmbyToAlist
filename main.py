@@ -199,7 +199,7 @@ def write_cache_file(item_id, path, req_header, size=52428800, start_point=0, fi
                 mod_time = os.path.getmtime(full_path)
                 now_time = datetime.now().timestamp()
                 # 如果文件在过去15秒内被修改过，可能仍在缓存过程中
-                # 防止重复缓存由putCacheFile负责
+                # 防止重复缓存由write_cache_file负责
                 if now_time - mod_time < 15:
                     print(f"{get_current_time()}-Cache Error: Cache file for range {start_point} may is still writing.")
                     return False

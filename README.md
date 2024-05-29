@@ -1,4 +1,4 @@
-# 简介
+# 1. 简介
 
 本项目适用于 Emby+云盘 的用法，通过 Nginx 将视频播放连接重定向到云盘的直链，从而实现 播放加速/节省流量 的目的。
 
@@ -8,7 +8,7 @@
 
 仅在 Emby 4.8.3 上测试成功，支持 Infuse 播放，更低或更高的 Emby 版本可能会不兼容。
 
-# 原理解释
+# 2. 原理解释
 
 通过 Nginx 反向代理，将播放请求移交给 Python 处理，通过 Alist 获取到云盘直链，最后将 Emby 播放链接重定向到云盘。
 
@@ -16,27 +16,41 @@
 
 劫持的 Emby 路径为 `/emby/videos/12345/original.mp4?xxx=xxx`，通过 Python 根据 URL 中的参数查找挂载路径，然后通过 Alist api 获取文件直链后返回状态码302重定向到直链。
 
-**缓存逻辑解释**
+
+
+2.1 **缓存逻辑解释**
 
 如果在配置文件中启用缓存，会在第一次播放云盘链接的时候缓存该视频文件的前15秒钟（通过码率计算得出），并在下次播放的时候先行返回本地的缓存文件，用于减少刚开始播放时的缓冲时间。**该功能的加速效果可能因不同的播放器的播放逻辑而产生少许变化。**
 
 假设一个电影的码率为 30Mbps，前 15s 的大小大约为 50MB；而对于普通的一集番剧，前 15s 的大小大约只有几M。此功能可根据本地存储空间的大小自行决定是否开启。
 
-**AlistPublicStorageURL 和 embyPublicURL**
+**已知问题：当前的缓存逻辑在面对 “VLC 播放器 （如 Fileball 免费版）“ 和 ” Infuse 播放器” 时会出现问题，当使用以上播放器播放时，默认禁用缓存的一些功能。**
 
-这两项配置用于自定义播放链接的主机名。比如 Alist 中的 Onedrive 存储默认返回直链为 `https://xxx.sharepoint.com/xxx/xxx`, 假设配置`AlistPublicStorageURL` 为`https://stream.example.com/alist`，真正返回客户端的将是 `https://stream.example.com/alist/xxx/xxx`，适用于对直链反代进行加速的情景。
+
+
+2.2 **AlistPublicStorageURL 和 embyPublicURL**
+
+这两项配置用于自定义播放链接的主机名。
+
+举例说明：
+
+假设 Alist 中的 Onedrive 存储默认返回直链为 `https://xxx.sharepoint.com/xxx/xxx`, 配置`AlistPublicStorageURL` 为`https://stream.example.com/alist`，真正返回客户端的将是 `https://stream.example.com/alist/xxx/xxx`，适用于对直链反代进行加速的情景。
 
 而 `embyPublicURL` 主要应用于对本地媒体文件的直链，该配置项只会影响到返回的文件直链，所以可以配置为 Emby 的公网域名，也可以配置为另外对 Emby 反向代理后只用于播放的域名。如果该配置与 Emby 公网域名不一样，可以实现类似于前后端分离的效果。
 
-**Rclone 对特殊字符的处理**
+
+
+2.3 **Rclone 对特殊字符的处理**
+
+注：目前不再建议使用本功能解决 Rclone 特殊字符的问题，更加彻底有效的处理方法是告诉 Rclone 不要对这些特殊字符进行处理，只需在 Rclone 配置文件中对应存储的末尾添加上 `encoding = None` 即可。随后手动将存储中已经被改变的文件名称删去额外添加的字符就可以完美解决。
 
 在 Rclone 文档中提到，会对特殊文件名中的特殊字符串进行处理，防止由于后端存储不兼容产生的问题。在 Rclone 中，该配置是默认开启的，会导致在特殊文件名中添加一个额外的符号，比如：**"名侦探柯南：万圣节的新娘 (2022)"** 会被处理为 **"名侦探柯南‛：万圣节的新娘 (2022)"**，但在挂载路径中文件名依旧保持不变。然而 Alist 并不会对这些文件名进行处理，就会导致本地路径中的 **"/movie/名侦探柯南：万圣节的新娘 (2022)"** 而在 Alist 中为 **"/movie/名侦探柯南‛：万圣节的新娘 (2022)"**，就会导致找不到目标文件而返回404。
 
 本程序对这种请求简单进行了处理，只需将 `convertSpecialChars` 设置为 True 后，程序会尝试将额外的符号 '**‛**' 移除。但该功能并不总是有效。
 
-更加彻底有效的处理方法是告诉 Rclone 不要对这些特殊字符进行处理，只需在 Rclone 配置文件中对应存储的末尾添加上 `encoding = None` 即可。随后手动将存储中已经被改变的文件名称删去额外添加的字符就可以完美解决此问题。
 
-# 配置文件说明
+
+# 3. 配置文件
 
 | 配置                    |       解释说明                                                     |       示例                                             |
 | ------------------- | ------------------------------------------------------------ | ------------------------------------------------------------ |
@@ -54,9 +68,9 @@
 | enableCache         | 是否启用本地缓存。<br />启用后将在播放新视频的时候缓存文件的前15秒到本地路径，适用于如Onedrive 存储的起播加速 | False |
 | cachePath           | 缓存存放路径 | /path/to/Cache/ |
 
-# 使用教程
+# 4. 使用教程
 
-修改配置文件后，重命名`config.example.py`到`config.py`，如果不需要WSGI服务器，可以直接使用 `python3 main.py` 启动，默认监听 `60001` 端口。使用 Flask 自带的 web 服务可能会导致一些性能问题。
+修改配置文件后，重命名`config.example.py`到`config.py`，如果不需要 WSGI 服务器，可以直接使用 `python3 main.py` 启动，默认监听 `60001` 端口，不过使用 Flask 自带的 web 服务可能会导致一些性能问题。
 
 仓库内同时提供了 `Gunicorn` 的配置文件，可以通过下面的命令使用 `Gunicorn` 启动
 ```
@@ -65,33 +79,48 @@ mkdir -p ./log
 gunicorn main:app -c ./gunicorn.config.py
 ```
 
-# Nginx 配置示例
+# 5. Nginx 配置示例
 
-程序默认监听 60001 端口
+程序默认监听 60001 端口，需要将播放接口反向代理到程序监听的端口，将其余请求正常反向代理到 Emby 服务器。
+
+**注意：确保反向代理 60001 端口时不要启用缓存，其中包括 Nginx 缓存和 Cloudflare 缓存，这会导致请求头中的 Range 丢失，从而使 Cache 功能完全失效。**
+
+以下配置示例中启用了 Nginx 的 Slice 缓存，除此之外并无缓存其他任何静态文件：
 
 ```
-location ~* ^/preventRedirect/(.*)$ {
-    rewrite ^/preventRedirect/(.*)$ /$1 break;
-    proxy_pass http://127.0.0.1:8096;
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header REMOTE-HOST $remote_addr;
-    proxy_set_header Upgrade $http_upgrade;
-    proxy_set_header Connection "upgrade";
-    proxy_cache off;
-    proxy_buffering off;
-}
+location ~* ^/preventRedirct/emby/videos/(\d*)/(stream|original).* {
+    rewrite ^/preventRedirct/(.*)$ /$1 break; 
 
+    proxy_pass http://127.0.0.1:8000; 
+    proxy_ignore_headers X-Accel-Expires Expires Cache-Control;
+    proxy_set_header Range $slice_range;
+    proxy_set_header Host $host; 
+    proxy_set_header X-Real-IP $remote_addr; 
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; 
+    proxy_set_header Upgrade $http_upgrade; 
+    proxy_set_header Connection ""; 
+    add_header Strict-Transport-Security "max-age=31536000"; 
+    add_header Cache-Control no-cache;
+
+    slice 4m;
+    proxy_cache emby-videos;
+    proxy_cache_lock on;
+    proxy_cache_lock_age 60s;
+    proxy_http_version 1.1;
+
+    proxy_cache_key $uri$is_args$args$slice_range;
+    proxy_cache_valid 200 206 7d;
+}
 # /emby/Videos/12345/xxx/Subtitles/3/0/Stream.ass?api_key=xx
 location ~* /videos/(\d*)/(stream|original).* {
-    # Cache alist direct link
-    proxy_cache off; 
+    proxy_cache off;
+    proxy_buffering off;
     proxy_set_header Host $host; 
     proxy_set_header Range $http_range; 
     proxy_set_header If-Range $http_if_range; 
     proxy_set_header X-Real-IP $remote_addr; 
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; 
+    proxy_set_header X-Forwarded-Proto $scheme;
     proxy_pass http://127.0.0.1:60001; 
 }
 # Proxy sockets traffic for jellyfin-mpv-shim and webClient
@@ -126,8 +155,9 @@ location ~ / {
     add_header X-Cache $upstream_cache_status; 
     add_header Strict-Transport-Security "max-age=31536000"; 
     proxy_cache off;
-    proxy_cache_bypass 1;
 }
 ```
 
-`proxy_cache off` 和 `proxy_buffering off` 是必须的，不添加这两项会导致播放的时候出现进度乱跳的问题。
+# 6. Cloudflare Cache Rule 示例配置
+
+使用 Cloudflare Cache Rule 缓存 Emby 的静态文件
