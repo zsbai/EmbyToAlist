@@ -7,12 +7,12 @@ if [ -z "$1" ]; then
 fi
 
 # 输入的路径
-INPUT_PATH="$1"
 
 # Rclone 配置（使用默认配置）
 RCLONE_PATH="/usr/bin/rclone"
 RCLONE_OPTIONS="--transfers=10 -Pv --dry-run"
-RCLONE_REMOTE=$2
+RCLONE_REMOTE=$1
+shift
 
 # 修改路径，删除或添加目录
 PATH_PREFIX_REMOVE="/volume/data"
@@ -21,10 +21,6 @@ PATH_PREFIX_MOUNT_ADD=""
 
 # 缓存路径
 CACHE_PATH="/root/cache"
-
-DEST_PATH="${INPUT_PATH#$PATH_PREFIX_REMOVE}"
-DEST_PATH="${PATH_PREFIX_ADD}/${DEST_PATH#/}"
-MOUNT_PATH="${DEST_PATH%/${DEST_PATH#/}}"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -47,12 +43,6 @@ log_error() {
 log_success() {
     echo -e "${GREEN}[SUCCESS] $1${NC}"
 }
-
-log_info "Input path: ${INPUT_PATH}"
-log_info "Destination path: ${DEST_PATH}"
-log_info "Rclone remote: ${RCLONE_REMOTE}"
-log_info "Ctrl+C to cancel, or wait 3 seconds to continue..."
-sleep 3
 
 commands=(
     "rclone"
@@ -86,6 +76,7 @@ create_cache() {
     local path=$1
     local cache_path=$2
     local bitrate=$3
+    local mount_path=$4
 
     # # 调整路径格式，用于计算 MD5
     # local md5_path="${file_path/volume\/data\/movie/movie}"
@@ -117,9 +108,10 @@ create_cache() {
 process_directory() {
     local file_path=$1
     local dest_path=$2
+    local mount_path=$3
 
     log_info "Processing directory: $file_path"
-    log_info "Destination on cloud: $RCLONE_REMOTE:$DEST_PATH"
+    log_info "Destination on cloud: $RCLONE_REMOTE:$dest_path"
 
     # 上传整个目录
     upload_directory "$file_path" "$dest_path" "$RCLONE_REMOTE"
@@ -165,12 +157,34 @@ process_directory() {
     if [[ ${#video_files[@]} -gt 1 ]]; then
         for file in "${video_files[@]}"; do
             log_info "Processing file: $file, bitrate: $bitrate bps"
-            create_cache "$file" "$CACHE_PATH" "$bitrate"
+            create_cache "$file" "$CACHE_PATH" "$bitrate" "$mount_path"
             log_success "Processing complete for file: $file, bitrate: $bitrate bps"
         done
+    else
+        log_info "Processing file: $selected_file, bitrate: $bitrate bps"
+        create_cache "$selected_file" "$CACHE_PATH" "$bitrate" "$mount_path"
+        log_success "Processing complete for file: $selected_file, bitrate: $bitrate bps"
     fi
 
 }
 
 # 主程序
-process_directory "$INPUT_PATH" "$DEST_PATH"
+for INPUT_PATH in "$@"; do
+    if [[ -d "$INPUT_PATH" ]]; then
+
+        DEST_PATH="${INPUT_PATH#$PATH_PREFIX_REMOVE}"
+        DEST_PATH="${PATH_PREFIX_ADD}/${DEST_PATH#/}"
+        MOUNT_PATH="${DEST_PATH%/${DEST_PATH#/}}"
+
+        log_info "Input path: ${INPUT_PATH}"
+        log_info "Destination path: ${DEST_PATH}"
+        log_info "Rclone remote: ${RCLONE_REMOTE}"
+        log_info "Ctrl+C to cancel, or wait 3 seconds to continue..."
+        sleep 3
+
+        process_directory "$INPUT_PATH" "$DEST_PATH" "$MOUNT_PATH"
+    else
+        log_error "Error: Input path \"$INPUT_PATH\" is not a directory."
+        exit 1
+    fi
+done
