@@ -4,21 +4,9 @@ Rclone，Alist，Python和Nginx组合实现的Emby直链播放项目，同时配
 
 项目设计之初考虑了 本地媒体文件 和 云盘媒体文件共存 的情况，通过设置配置文件可实现仅云盘使用直链。
 
-在Emby 4.8.3服务端上测试通过，支持Infuse，支持任何Alist可以配置的云盘，支持 本地媒体+云盘媒体 混搭。
+在Emby 4.8.3服务端上测试通过，支持Infuse，支持任何Alist可以配置的云盘，支持 本地媒体+云盘媒体 混搭，暂不支持 Strm。
 
 灵感来自于 [MisakaFxxk/Go_stream](https://github.com/MisakaFxxk/Go_stream) 和 [bpking1/embyExternalUrl](https://github.com/bpking1/embyExternalUrl)，十分感谢两位大佬的开源项目。
-
-## 相比于 [bpking1/embyExternalUrl](https://github.com/bpking1/embyExternalUrl)有什么区别？
-
-[bpking1/embyExternalUrl](https://github.com/bpking1/embyExternalUrl) 项目是目前主流的劫持直链的做法，但默认会使用到 Nginx 的 njs 模块进行操作，而默认的 Nginx 发行版并不包含 njs 模块，为了不影响原有的网站配置，无论是动态加载，还是重新编译安装，都较为耗时耗力。
-
-该EmbyToAlist由Python编写，原理为通过python启动一个本地的服务器，通过Nginx反向代理Emby播放链接到该本地服务器，通过python向Emby获取媒体详细信息，通过Alist获取文件直链，最后返回302重定向至云盘直链。
-
-由于Python的拓展性较强，所以尝试性的加入了文件缓存功能。该功能本意为减少视频播放器的加载时间，通过第一次播放时缓存视频文件的前几秒到本地磁盘，在后续请求时优先返回缓存文件来解决播放开始时加载时间较长的问题。但由于实现方法略微抽象，所以不通播放器所获得的加速效果有限，当前测试不完全支持的播放器有：VLC，Infuse。
-
-该缓存效果在面对云盘存储直链访问延迟较高的情况下效果较好。
-
-通过测试 Fileball 的 **mpv** 播放器，在使用Onedrive作为后端存储的情况下，可以实现在有缓存的状态下秒开。
 
 ## 部署
 
@@ -36,8 +24,8 @@ gunicorn main:app -c ./gunicorn.config.py
 启动服务器后，需要配置Nginx，将播放路径反响代理到本地`60001`端口，如果有使用 本地文件+云盘文件 的需求，则需要设置一个新的反向代理路径以防止程序陷入无限自我重定向的循环，以下是相关的Nginx配置文件示例：
 
 ```
-location ~* ^/preventRedirct/emby/videos/(\d*)/(stream|original).* {
-    rewrite ^/preventRedirct/(.*)$ /$1 break; 
+location ~* ^/preventRedirect/emby/videos/(\d*)/(stream|original).* {
+    rewrite ^/preventRedirect/(.*)$ /$1 break; 
 
     proxy_pass http://127.0.0.1:8000; 
     #proxy_ignore_headers X-Accel-Expires Expires Cache-Control;
@@ -67,7 +55,7 @@ location ~* /videos/(\d*)/(stream|original).* {
 }
 ```
 
-**注意：为确保请求头中的`Range`不丢失，确保中间的任何代理服务关闭缓存，如Cloudflare等。启用缓存会导致`Range`请求头丢失，从而使缓存功能失效。**
+**注意：为确保请求头中的`Range`不丢失，确保中间的任何代理服务关闭缓存，如Cloudflare等。启用缓存会导致`Range`请求头丢失，从而使本地的缓存功能失效。**
 
 ## 配置文件说明
 
@@ -96,8 +84,6 @@ location ~* /videos/(\d*)/(stream|original).* {
 
 假设一个电影的码率为 30Mbps，前 15s 的大小大约为 50MB；而对于普通的一集番剧，前 15s 的大小大约只有几M。此功能可根据本地存储空间的大小自行决定是否开启。
 
-**已知问题：当前的缓存逻辑在面对 “VLC 播放器 （如 Fileball 免费版）“ 和 ” Infuse 播放器” 时会出现问题，当使用以上播放器播放时，默认禁用缓存的一些功能。**
-
 已知问题：并不是所有播放器支持该缓存逻辑，在面对不支持的播放器时，需要将播放器关键词UA填入配置文件中。如果播放器不支持缓存的情况下启用缓存，会出现播放器播放完缓存的内容后认为视频已经结束，直接退出并标记该视频“已播放完成”。
 
 截至目前，发现 “VLC 播放器 （如 Fileball 免费版）“ 和 ” Infuse 播放器” 不支持该缓存逻辑。
@@ -114,13 +100,25 @@ location ~* /videos/(\d*)/(stream|original).* {
 
 该两项配置可用于间接实现Emby的前后端分离，前者为播放云盘时使用的网络域名，后者为播放本地文件时使用的网络域名，如果均不是Emby的公网地址，则可以实现前端和后端使用不同的域名，可相应配置不同的缓存策略。
 
+## 相比于 [bpking1/embyExternalUrl](https://github.com/bpking1/embyExternalUrl)有什么区别？
+
+[bpking1/embyExternalUrl](https://github.com/bpking1/embyExternalUrl) 项目是目前主流的劫持直链的做法，但默认会使用到 Nginx 的 njs 模块进行操作，而默认的 Nginx 发行版并不包含 njs 模块，为了不影响原有的网站配置，无论是动态加载，还是重新编译安装，都较为耗时耗力。
+
+该EmbyToAlist由Python编写，原理为通过python启动一个本地的服务器，通过Nginx反向代理Emby播放链接到该本地服务器，通过python向Emby获取媒体详细信息，通过Alist获取文件直链，最后返回302重定向至云盘直链。
+
+由于Python的拓展性较强，所以尝试性的加入了文件缓存功能。该功能本意为减少视频播放器的加载时间，通过第一次播放时缓存视频文件的前几秒到本地磁盘，在后续请求时优先返回缓存文件来解决播放开始时加载时间较长的问题。但由于实现方法略微抽象，所以不通播放器所获得的加速效果有限，当前测试不完全支持的播放器有：VLC，Infuse。
+
+该缓存效果在面对云盘存储直链访问延迟较高的情况下效果较好。
+
+通过测试 Fileball 的 **mpv** 播放器，在使用Onedrive作为后端存储的情况下，可以实现在有缓存的状态下秒开。
+
 ## 完整 Nginx 反向代理配置示例
 
 该配置并没有缓存任何静态文件，因为我使用Cloudflare缓存全站，后续会给出相关配置
 
 ```
-location ~* ^/preventRedirct/emby/videos/(\d*)/(stream|original).* {
-    rewrite ^/preventRedirct/(.*)$ /$1 break; 
+location ~* ^/preventRedirect/emby/videos/(\d*)/(stream|original).* {
+    rewrite ^/preventRedirect/(.*)$ /$1 break; 
 
     proxy_pass http://127.0.0.1:8000; 
     #proxy_ignore_headers X-Accel-Expires Expires Cache-Control;
