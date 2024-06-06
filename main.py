@@ -340,11 +340,15 @@ def get_alist_raw_url(filePath) -> tuple:
 def redirect_to_alist_raw_url(file_path) -> flask.Response:
     """获取视频直链地址"""
     
-    if file_path in URL_CACHE:
+    if file_path in URL_CACHE.keys():
         now_time = datetime.now().timestamp()
         if now_time - URL_CACHE[file_path]['time'] < 300:
             print("\nAlist Raw URL Cache exists and is valid (less than 5 minutes)")
+            print("Redirected Url: " + URL_CACHE[file_path]['url'])
             return flask.redirect(URL_CACHE[file_path]['url'], code=302)
+        else:
+            print("\nAlist Raw URL Cache is expired, re-fetching...")
+            del URL_CACHE[file_path]
     
     raw_url, code = get_alist_raw_url(file_path)
     
@@ -414,13 +418,11 @@ def redirect(item_id, filename):
                 print("Cache is disabled for this client")
                 return redirect_to_alist_raw_url(alist_path)
         
-        if end_byte is None:
-            # 响应头中的end byte
-            resp_end_byte = cacheFileSize - 1
-            resp_file_size = resp_end_byte - start_byte + 1
-        else:
-            resp_end_byte = end_byte
-            resp_file_size = resp_end_byte - start_byte + 1
+
+        # 响应头中的end byte
+        resp_end_byte = cacheFileSize - 1
+        resp_file_size = resp_end_byte - start_byte + 1
+
         
         getCacheStatus_exists = get_cache_status(item_id, alist_path, start_byte)
         if getCacheStatus_exists:
@@ -449,11 +451,18 @@ def redirect(item_id, filename):
     # 当请求文件末尾章节信息时
     elif file_info['Size'] - start_byte < 2 * 1024 * 1024:
         if get_cache_status(item_id, path=alist_path, start_point=start_byte):
+            if end_byte is None:
+                resp_end_byte = file_info['Size'] - 1
+                resp_file_size = file_info['Size'] - start_byte
+            else:
+                resp_end_byte = end_byte
+                resp_file_size = end_byte - start_byte + 1
+
             resp_headers = {
             'Content-Type': get_content_type(file_info['Container']),
             'Accept-Ranges': 'bytes',
-            'Content-Range': f"bytes {start_byte}-{file_info['Size']-1}/{file_info['Size']}",
-            'Content-Length': f'{file_info["Size"]-start_byte}',
+            'Content-Range': f"bytes {start_byte}-{resp_end_byte}/{file_info['Size']}",
+            'Content-Length': f'{resp_file_size}',
             'Cache-Control': 'private, no-transform, no-cache',
             'X-EmbyToAList-Cache': 'Hit',
             }
