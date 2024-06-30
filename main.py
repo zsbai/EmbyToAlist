@@ -65,7 +65,8 @@ def get_file_info(item_id, MediaSourceId, apiKey) -> dict:
     :param item_id: Emby Item ID
     :param MediaSourceId: Emby MediaSource ID
     :param apiKey: Emby API Key
-    :return: 包含文件信息的字典"""
+    :return: 包含文件信息的字典
+    """
     data = {}
     url = f"{embyServer}/emby/Items/{item_id}/PlaybackInfo?MediaSourceId={MediaSourceId}&api_key={apiKey}"
     print("\n" + url)
@@ -115,11 +116,11 @@ def should_redirect_to_alist(filePath: str) -> bool:
     """
     检查文件路径是否在不需要重定向的路径中
     """
-    for path in notRedirectPaths:
-        if filePath.startswith(path):
-            print(f"\nFilePath is in notRedirectPaths, return Emby Original Url")
-            return False
-    return True
+    if any(filePath.startswith(path) for path in notRedirectPaths):
+        print(f"\nFilePath is in notRedirectPaths, return Emby Original Url")
+        return False
+    else:
+        return True
 
 def read_file(filePath, startPoint=0, endPoint=None, chunk_size=1024*1024):
     """
@@ -164,7 +165,7 @@ def write_cache_file(item_id, path, req_header, size=52428800, start_point=0, fi
     """
     subdirname, dirname = get_hash_subdirectory_from_path(path)
     
-    # 如果filesize不为None，endPoint为文件末尾
+    # 如果filesize 不为 None，endPoint 为文件末尾
     if start_point <= size:
         start_point = 0
         end_point = size - 1
@@ -295,7 +296,8 @@ def extract_api_key():
 def get_alist_raw_url(filePath) -> tuple:
     """根据文件路径获取Alist Raw Url"""
     
-    alistApiUrl = f"{alistServer}/api/fs/get"
+    alist_api_url = f"{alistServer}/api/fs/get"
+
     body = {
         "path": filePath,
         "password": ""
@@ -306,7 +308,7 @@ def get_alist_raw_url(filePath) -> tuple:
     }
     
     try:
-        req = requests.post(alistApiUrl, json=body, headers=header).json()
+        req = requests.post(alist_api_url, json=body, headers=header).json()
     except Exception as e:
         print(e)
         return ('Alist Server Error', 500)
@@ -413,8 +415,8 @@ def redirect(item_id, filename):
     
     if start_byte < cacheFileSize:
         
-        if start_byte == 0:
-            if any(user_agent.lower() in flask.request.headers.get('User-Agent', '').lower() for user_agent in cacheClientBlacklist):
+        # 判断客户端是否在黑名单中
+        if any(user_agent.lower() in flask.request.headers.get('User-Agent', '').lower() for user_agent in cacheClientBlacklist):
                 print("Cache is disabled for this client")
                 return redirect_to_alist_raw_url(alist_path)
         
@@ -428,12 +430,12 @@ def redirect(item_id, filename):
         if getCacheStatus_exists:
             
             resp_headers = {
-            'Content-Type': get_content_type(file_info['Container']),
-            'Accept-Ranges': 'bytes',
-            'Content-Range': f"bytes {start_byte}-{resp_end_byte}/{file_info['Size']}",
-            'Content-Length': f'{resp_file_size}',
-            'Cache-Control': 'private, no-transform, no-cache',
-            'X-EmbyToAList-Cache': 'Hit',
+                'Content-Type': get_content_type(file_info['Container']),
+                'Accept-Ranges': 'bytes',
+                'Content-Range': f"bytes {start_byte}-{resp_end_byte}/{file_info['Size']}",
+                'Content-Length': f'{resp_file_size}',
+                'Cache-Control': 'private, no-transform, no-cache',
+                'X-EmbyToAList-Cache': 'Hit',
             }
             
             print("\nCached file exists and is valid")
@@ -459,12 +461,12 @@ def redirect(item_id, filename):
                 resp_file_size = end_byte - start_byte + 1
 
             resp_headers = {
-            'Content-Type': get_content_type(file_info['Container']),
-            'Accept-Ranges': 'bytes',
-            'Content-Range': f"bytes {start_byte}-{resp_end_byte}/{file_info['Size']}",
-            'Content-Length': f'{resp_file_size}',
-            'Cache-Control': 'private, no-transform, no-cache',
-            'X-EmbyToAList-Cache': 'Hit',
+                'Content-Type': get_content_type(file_info['Container']),
+                'Accept-Ranges': 'bytes',
+                'Content-Range': f"bytes {start_byte}-{resp_end_byte}/{file_info['Size']}",
+                'Content-Length': f'{resp_file_size}',
+                'Cache-Control': 'private, no-transform, no-cache',
+                'X-EmbyToAList-Cache': 'Hit',
             }
             
             print("\nCached file exists and is valid")
