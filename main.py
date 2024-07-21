@@ -365,6 +365,7 @@ def redirect_to_alist_raw_url(file_path) -> flask.Response:
 # for infuse
 @app.route('/Videos/<item_id>/<filename>', methods=['GET'])
 # for emby
+@app.route('/videos/<item_id>/<filename>', methods=['GET'])
 @app.route('/emby/videos/<item_id>/<filename>', methods=['GET'])
 def redirect(item_id, filename):
     # Example: https://emby.example.com/emby/Videos/xxxxx/original.mp4?MediaSourceId=xxxxx&api_key=xxxxx

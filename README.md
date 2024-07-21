@@ -88,7 +88,7 @@ gunicorn main:app -c ./gunicorn.config.py
 以下配置示例中启用了 Nginx 的 Slice 缓存，除此之外并无缓存其他任何静态文件：
 
 ```
-location ~* ^/preventRedirct/emby/videos/(\d*)/(stream|original).* {
+location ~* ^/preventRedirct(/emby)?/videos/(\d*)/(stream|original).* {
     rewrite ^/preventRedirct/(.*)$ /$1 break; 
 
     proxy_pass http://127.0.0.1:8000; 
