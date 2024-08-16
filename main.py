@@ -207,7 +207,7 @@ def write_cache_file(item_id, path, req_header, size=52428800, start_point=0, fi
                 print(f"{get_current_time()}-WARNING: Existing Cache Range within new range. Deleting old cache.")
                 os.remove(os.path.join(cache_path, subdirname, dirname, file))
     
-    # 创建一个空文件
+    # 创建一个空文件 防止后续被重复缓存
     with open(cache_file_path, 'w') as f:
         pass
     
@@ -217,7 +217,14 @@ def write_cache_file(item_id, path, req_header, size=52428800, start_point=0, fi
     # Modify the range to startPoint-first50M
     req_header['Range'] = f"bytes={start_point}-{end_point}"
 
-    resp = requests.get(raw_url, headers=req_header, stream=True)
+    # 如果请求失败，删除空缓存文件
+    try:
+        resp = requests.get(raw_url, headers=req_header, stream=True)
+    except Exception as e:
+        print(f"{get_current_time()}-Cache Error {start_point}-{end_point}: {e}")
+        os.remove(cache_file_path)
+        return False
+    
     if resp.status_code == 206: 
         # print(f"Start to write cache file: {item_id}")
         with open (cache_file_path, 'wb') as f:
