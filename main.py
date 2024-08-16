@@ -122,33 +122,38 @@ def should_redirect_to_alist(file_path: str) -> bool:
     else:
         return True
 
-def read_file(file_path, startPoint=0, endPoint=None, chunk_size=1024*1024):
+def read_file(file_path: str, start_point: int = 0, end_point = None, chunk_size: int = 1024*1024):
     """
     读取文件的指定范围，并返回生成器
-    
-    :param filePath: 文件路径
-    :param startPoint: 文件读取起始点
-    :param endPoint: 文件读取结束点，None 表示文件末尾
+   
+    :param file_path: 文件路径
+    :param start_point: 文件读取起始点
+    :param end_point: 文件读取结束点，None 表示文件末尾
     :param chunk_size: 每次读取的字节数，默认为 1MB
     :return: 生成器，每次返回 chunk_size 大小的数据
     """
     try:
         with open(file_path, 'rb') as f:
-            f.seek(startPoint)
-            data = f.read(chunk_size)
-            if endPoint is not None:
-                while data and f.tell() <= endPoint:
-                        if f.tell() > endPoint:
-                            yield data[:endPoint - f.tell() + len(data)]
-                        else:
-                            yield data
-                        data = f.read(chunk_size)
-            else:
-                while data:
-                    yield data
-                    data = f.read(chunk_size)
-    except (FileNotFoundError, PermissionError) as e:
-        print(f"Error opening file: {e}")
+            f.seek(start_point)
+            while True:
+                if end_point is not None:
+                    remaining = end_point - f.tell()
+                    if remaining <= 0:
+                        break
+                    chunk_size = min(chunk_size, remaining)
+                
+                data = f.read(chunk_size)
+                if not data:
+                    break
+                yield data
+    except FileNotFoundError:
+        print(f"File not found: {file_path}")
+    except PermissionError:
+        print(f"Permission denied: {file_path}")
+    except IOError as e:
+        print(f"IO error occurred while reading file: {e}")
+    except Exception as e:
+        print(f"Unexpected error occurred while reading file: {e}")
 
 
 def write_cache_file(item_id, path, req_header, size=52428800, start_point=0, file_size=None) -> bool:
@@ -424,6 +429,7 @@ def redirect(item_id, filename):
     # 获取缓存15秒的文件大小， 并取整
     cacheFileSize = int(file_info.get('Bitrate', 52428800) / 8 * 15)
     
+    # 应该走缓存的情况1：请求文件开头
     if start_byte < cacheFileSize:
         
         # 判断客户端是否在黑名单中
@@ -451,7 +457,9 @@ def redirect(item_id, filename):
             
             print("\nCached file exists and is valid")
             # 返回缓存内容和调整后的响应头
-            print(range_header)
+            print("Request Range Header: " + range_header)
+            print("Response Range Header: " + f"bytes {start_byte}-{resp_end_byte}/{file_info['Size']}")
+            print("Response Content-Length: " + f'{resp_file_size}')
             return flask.Response(read_cache_file(item_id, alist_path, start_byte, cacheFileSize), headers=resp_headers, status=206)
         else:
             # 启动线程缓存文件
@@ -461,7 +469,7 @@ def redirect(item_id, filename):
             # 重定向到原始URL
             return redirect_to_alist_raw_url(alist_path)
      
-    # 当请求文件末尾章节信息时
+    # 应该走缓存的情况2：请求文件末尾
     elif file_info['Size'] - start_byte < 2 * 1024 * 1024:
         if get_cache_status(item_id, path=alist_path, start_point=start_byte):
             if end_byte is None:
@@ -482,7 +490,9 @@ def redirect(item_id, filename):
             
             print("\nCached file exists and is valid")
             # 返回缓存内容和调整后的响应头
-            print(range_header)
+            print("Request Range Header: " + range_header)
+            print("Response Range Header: " + f"bytes {start_byte}-{resp_end_byte}/{file_info['Size']}")
+            print("Response Content-Length: " + f'{resp_file_size}')
             return flask.Response(read_cache_file(item_id=item_id, path=alist_path, start_point=start_byte, end_point=end_byte), headers=resp_headers, status=206)
         else:
             # 启动线程缓存文件
@@ -492,7 +502,8 @@ def redirect(item_id, filename):
             # 重定向到原始URL
             return redirect_to_alist_raw_url(alist_path)
     else:
-        print(range_header)
+        print("Request Range is not in cache range, redirect to Alist Raw Url")
+        print("Request Range Header: " + range_header)
         return redirect_to_alist_raw_url(alist_path)
 
 
