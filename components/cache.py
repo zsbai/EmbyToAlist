@@ -1,7 +1,7 @@
 from datetime import datetime
 import os
 import requests
-from utils import *
+from components.utils import *
 
 
 def read_file(file_path: str, start_point: int = 0, end_point = None, chunk_size: int = 1024*1024, auto_delete=False):

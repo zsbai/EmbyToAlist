@@ -221,56 +221,7 @@ def redirect(item_id, filename):
 
 @app.route('/emby/webhook', methods=['POST'])
 def webhook():
-    """
-    通过启用 Emby Webhook 可以实现以下功能：
-    1. 根据用户的观看位置，根据停止位置创建和删除缓存文件
-    """
-    if flask.request.headers.get('Content-Type') != 'application/json':
-        return flask.Response(status=415, response='Unsupported Request Type')
-    
-    data = flask.request.json
-    Event = data.get('Event', '')
-    
-    if Event == "playback.start":
-        # 开始播放时删除缓存文件
-        PositionTicks = data.get('PlayBackInfo', {}).get('PositionTicks', 0)
-        RunTimeTicks = data.get('Item', {}).get('RunTimeTicks', 0)
-        Size = data.get('Item', {}).get('Size', 0)
-        Path = data.get('Item', {}).get('Path', '')
-        Item_Id = data.get('Item', {}).get('Id', '')
-        if play_percent < 0.03 or play_percent > 0.90 or PositionTicks / 10_000_000 < 120:
-            print("Webhook: No Cache")
-            return flask.Response(status=200, response='No Cache')
-        else:
-            # 创建缓存删除标记，将在播放结束时删除缓存文件
-            create_cache_delete_tag(Item_Id, transform_file_path(Path), Size * play_percent)
-            return flask.Response(status=200, response='Cache Delete Tag Created')
-            
-    elif Event == "playback.stop":
-        
-        # 停止的时候创建缓存文件
-        # Date = data.get('Date', '')
-        # User = data.get('User', {}).get('Name', '')
-        PositionTicks = data.get('PlayBackInfo', {}).get('PositionTicks', 0)
-        RunTimeTicks = data.get('Item', {}).get('RunTimeTicks', 0)
-        Size = data.get('Item', {}).get('Size', 0)
-        Path = data.get('Item', {}).get('Path', '')
-        Item_Id = data.get('Item', {}).get('Id', '')
-        
-        play_percent = PositionTicks / RunTimeTicks
-        
-        # 如果播放百分比小于3%或大于90%，或者播放时间小于120秒，则不缓存
-        if play_percent < 0.03 or play_percent > 0.90 or PositionTicks / 10_000_000 < 120:
-            print("Webhook: No Cache")
-            return flask.Response(status=200, response='No Cache')
-        else:
-            # 创建缓存： 20MB， 缓存文件起始位置：播放百分比 * 文件大小
-            future = executor.submit(write_cache_file, Item_Id, transform_file_path(Path), flask.request.headers, 20 * 1024 * 1024, Size * play_percent)
-            future.add_done_callback(lambda future: print(future.result()))
-            return flask.Response(status=200, response='Cache Created')
-    # 其他事件
-    else:
-        pass
+    pass
 
 if __name__ == "__main__":
     app.run(port=60001, debug=True, threaded=True, host='0.0.0.0')
