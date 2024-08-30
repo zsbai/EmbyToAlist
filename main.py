@@ -155,7 +155,7 @@ def redirect(item_id, filename):
             return flask.Response(read_cache_file(item_id, alist_path, start_byte, cacheFileSize), headers=resp_headers, status=206)
         else:
             # 启动线程缓存文件
-            future = executor.submit(write_cache_file, item_id, alist_path, flask.request.headers, cacheFileSize, start_byte, host_url)
+            future = executor.submit(write_cache_file, item_id, alist_path, flask.request.headers, cacheFileSize, start_byte, file_size=None, host_url=host_url)
             future.add_done_callback(lambda future: print(future.result()))
 
             # 重定向到原始URL
