@@ -139,7 +139,7 @@ def get_alist_raw_url(file_path, host_url) -> tuple:
                 if file_path.startswith(path):
                     if isinstance(url, list):
                         host = re.search(r'(?<=://)[^/]+', host_url).group(0)
-                        host_domain = host.split('.')[-2:]
+                        host_domain = ".".join(host.split('.')[-2:])
                         for u in url:
                             if host_domain in u:
                                 url = u
