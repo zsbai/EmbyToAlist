@@ -10,16 +10,15 @@ alist_key = ""
 # 经过配置后将替换为 https://download.example.com/onedrive/
 # 不清楚请留空
 # Example: https://download.example.com/onedrive/
+
+# 可以用{host_url}代指请求头的host
+# 如果url为列表，则自动选择二级域名一致的url。和host_url互斥
 alist_download_url_replacement_map = {
     "path in Alist": "url",
     "/movie": "https://download.example.com/onedrive/",
+    "/anime": "{host_url}/anime/",
+    "/tv": ["https://download.example.com/tv/", "https://download.example2.net/tv/"],
 }
-
-# 该配置用于决定最终返回 “本地路径” 给客户端的视频地址，默认将添加 “/preventRedirect” 路径
-# 如：https://emby.example.com/preventRedirect/xxx/xxx.mp4
-# 默认请填写 Emby 的公网域名
-emby_public_URL = "https://emby.example.com"
-
 
 not_redirect_paths = ['/mnt/localpath/']
 

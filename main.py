@@ -45,7 +45,7 @@ def get_file_info(item_id, MediaSourceId, apiKey) -> dict:
 
 # return Alist Raw Url or Emby Original Url
 @get_time
-def redirect_to_alist_raw_url(file_path) -> flask.Response:
+def redirect_to_alist_raw_url(file_path, host_url) -> flask.Response:
     """获取视频直链地址"""
     
     if file_path in URL_CACHE.keys():
@@ -58,7 +58,7 @@ def redirect_to_alist_raw_url(file_path) -> flask.Response:
             print("\nAlist Raw URL Cache is expired, re-fetching...")
             del URL_CACHE[file_path]
     
-    raw_url, code = get_alist_raw_url(file_path)
+    raw_url, code = get_alist_raw_url(file_path, host_url=host_url)
     
     if code == 200:
         URL_CACHE[file_path] = {
@@ -82,6 +82,7 @@ def redirect(item_id, filename):
     
     api_key = extract_api_key(flask)
     file_info = get_file_info(item_id, flask.request.args.get('MediaSourceId'), api_key)
+    host_url = flask.request.url_root
     
     if file_info['Status'] == "Error":
         print(file_info['Message'])
@@ -93,7 +94,7 @@ def redirect(item_id, filename):
     
     # if checkFilePath return False：return Emby originalUrl
     if not should_redirect_to_alist(file_info['Path']):
-        redirected_url = f"{emby_public_URL}/preventRedirect{flask.request.full_path}"
+        redirected_url = f"{host_url}preventRedirect{flask.request.full_path}"
         print("Redirected Url: " + redirected_url)
         return flask.redirect(redirected_url, code=302)
     
@@ -101,13 +102,13 @@ def redirect(item_id, filename):
     
     # 如果没有启用缓存，直接返回Alist Raw Url
     if not enable_cache:
-        return redirect_to_alist_raw_url(alist_path)
+        return redirect_to_alist_raw_url(alist_path, host_url)
 
     range_header = flask.request.headers.get('Range', '')
     if not range_header.startswith('bytes='):
         print("\nWarning: Range header is not correctly formatted.")
         print(flask.request.headers)
-        return redirect_to_alist_raw_url(alist_path)
+        return redirect_to_alist_raw_url(alist_path, host_url)
     
     # 解析Range头，获取请求的起始字节
     bytes_range = range_header.split('=')[1]
@@ -127,7 +128,7 @@ def redirect(item_id, filename):
         # 判断客户端是否在黑名单中
         if any(user_agent.lower() in flask.request.headers.get('User-Agent', '').lower() for user_agent in cache_client_blacklist):
                 print("Cache is disabled for this client")
-                return redirect_to_alist_raw_url(alist_path)
+                return redirect_to_alist_raw_url(alist_path, host_url)
 
         # 响应头中的end byte
         resp_end_byte = cacheFileSize - 1
@@ -158,7 +159,7 @@ def redirect(item_id, filename):
             future.add_done_callback(lambda future: print(future.result()))
 
             # 重定向到原始URL
-            return redirect_to_alist_raw_url(alist_path)
+            return redirect_to_alist_raw_url(alist_path, host_url)
      
     # 应该走缓存的情况2：请求文件末尾
     elif file_info['Size'] - start_byte < 2 * 1024 * 1024:
@@ -191,7 +192,7 @@ def redirect(item_id, filename):
             future.add_done_callback(lambda future: print(future.result()))
 
             # 重定向到原始URL
-            return redirect_to_alist_raw_url(alist_path)
+            return redirect_to_alist_raw_url(alist_path, host_url)
     # 应该走缓存的情况3：缓存文件存在
     elif get_cache_status(item_id, path=alist_path, start_point=start_byte):
         resp_end_byte = 20 * 1024 * 1024 + start_byte - 1
@@ -216,7 +217,7 @@ def redirect(item_id, filename):
     else:
         print("Request Range is not in cache range, redirect to Alist Raw Url")
         print("Request Range Header: " + range_header)
-        return redirect_to_alist_raw_url(alist_path)
+        return redirect_to_alist_raw_url(alist_path, host_url)
 
 
 @app.route('/emby/webhook', methods=['POST'])

@@ -109,7 +109,7 @@ def extract_api_key(flask):
                 api_key = match_token.group(1)
     return api_key or emby_key
 
-def get_alist_raw_url(file_path) -> tuple:
+def get_alist_raw_url(file_path, host_url) -> tuple:
     """根据文件路径获取Alist Raw Url"""
     
     alist_api_url = f"{alist_server}/api/fs/get"
@@ -137,12 +137,24 @@ def get_alist_raw_url(file_path) -> tuple:
         if alist_download_url_replacement_map:
             for path, url in alist_download_url_replacement_map.items():
                 if file_path.startswith(path):
-                    protocol, rest = raw_url.split("://", 1)
-                    domain, path = rest.split("/", 1)
+                    if isinstance(url, list):
+                        host = re.search(r'(?<=://)[^/]+', host_url).group(0)
+                        host_domain = host.split('.')[-2:]
+                        for u in url:
+                            if host_domain in u:
+                                url = u
+                                break
+                        else:
+                            # 都不匹配选第一个
+                            url = url[0]
+                    elif "{host_url}" in url:
+                        url = url.replace("{host_url}/", host_url)
+                    
                     if not url.endswith("/"):
-                        raw_url = f"{url}/{path}"
-                    else:
-                        raw_url = f"{url}{path}"
+                        url = f"{url}/"
+                        
+                    # 替换原始URL为反向代理URL
+                    raw_url = re.sub(r'https?:\/\/[^\/]+\/', url, raw_url)
         
         return (raw_url, 200)
                
