@@ -42,7 +42,7 @@ def read_file(file_path: str, start_point: int = 0, end_point = None, chunk_size
             print(f"Cache File Auto Deleted: {file_path}")
 
 
-def write_cache_file(item_id, path, req_header=None, cache_size=52428800, start_point=0, file_size=None) -> bool:
+def write_cache_file(item_id, path, req_header=None, cache_size=52428800, start_point=0, file_size=None, host_url=None) -> bool:
     """
     写入缓存文件，end point通过cache_size计算得出
     
@@ -67,7 +67,7 @@ def write_cache_file(item_id, path, req_header=None, cache_size=52428800, start_
         return
     
     # 获取Alist Raw Url
-    raw_url, code = get_alist_raw_url(path)
+    raw_url, code = get_alist_raw_url(path, host_url)
     if code != 200:
         print(f"{get_current_time()}-Cache Error {start_point}-{end_point}, Alist Return: code: {code} and url: {raw_url}")
         return False

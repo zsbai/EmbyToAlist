@@ -147,7 +147,7 @@ def get_alist_raw_url(file_path, host_url) -> tuple:
                         else:
                             # 都不匹配选第一个
                             url = url[0]
-                    elif "{host_url}" in url:
+                    elif host_url is not None and "{host_url}" in url:
                         url = url.replace("{host_url}/", host_url)
                     
                     if not url.endswith("/"):
