@@ -43,28 +43,28 @@ def get_file_info(item_id, MediaSourceId, apiKey) -> dict:
     data['Message'] = "Can't match MediaSourceId"
     return data
 
-# return Alist Raw Url or Emby Original Url
+# return Alist Raw Url
 @get_time
 def redirect_to_alist_raw_url(file_path, host_url) -> flask.Response:
     """获取视频直链地址"""
     
     if file_path in URL_CACHE.keys():
         now_time = datetime.now().timestamp()
-        if now_time - URL_CACHE[file_path]['time'] < 300:
+        if now_time - URL_CACHE[file_path+host_url]['time'] < 300:
             print("\nAlist Raw URL Cache exists and is valid (less than 5 minutes)")
-            print("Redirected Url: " + URL_CACHE[file_path]['url'])
-            return flask.redirect(URL_CACHE[file_path]['url'], code=302)
+            print("Redirected Url: " + URL_CACHE[file_path+host_url]['url'])
+            return flask.redirect(URL_CACHE[file_path+host_url]['url'], code=302)
         else:
             print("\nAlist Raw URL Cache is expired, re-fetching...")
-            del URL_CACHE[file_path]
+            del URL_CACHE[file_path+host_url]
     
     raw_url, code = get_alist_raw_url(file_path, host_url=host_url)
     
     if code == 200:
-        URL_CACHE[file_path] = {
+        URL_CACHE[file_path+host_url] = {
             'url': raw_url,
             'time': datetime.now().timestamp()
-        }
+            }
         print("Redirected Url: " + raw_url)
         return flask.redirect(raw_url, code=302)
     else:
