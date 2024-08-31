@@ -48,7 +48,7 @@ def get_file_info(item_id, MediaSourceId, apiKey) -> dict:
 def redirect_to_alist_raw_url(file_path, host_url) -> flask.Response:
     """获取视频直链地址"""
     
-    if file_path in URL_CACHE.keys():
+    if file_path+host_url in URL_CACHE.keys():
         now_time = datetime.now().timestamp()
         if now_time - URL_CACHE[file_path+host_url]['time'] < 300:
             print("\nAlist Raw URL Cache exists and is valid (less than 5 minutes)")
