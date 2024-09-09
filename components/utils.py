@@ -73,22 +73,27 @@ def should_redirect_to_alist(file_path: str) -> bool:
     else:
         return True
 
-def transform_file_path(file_path, mount_path_prefix=mount_path_prefix):
+def transform_file_path(file_path, mount_path_prefix_remove=mount_path_prefix_remove, mount_path_prefix_add=mount_path_prefix_add) -> str:
     """
     转换 rclone 文件路径，以匹配Alist的路径格式
     rclone挂载路径->Alist路径
     
     :param file_path: 文件路径
-    :param mount_path_prefix: 挂载路径前缀
+    :param mount_path_prefix_remove: 需要移除挂载路径前缀
+    :param mount_path_prefix_add: 需要添加挂载路径前缀
     :return: 转换后的文件路径
     """
-    if convert_mount_path:
-        if mount_path_prefix.endswith("/"):
-            mount_path_prefix = mount_path_prefix.rstrip("/")
-        if file_path.startswith(mount_path_prefix):
-            file_path = file_path[len(mount_path_prefix):]
-        else:
-            print(f"Error: mount_path_prefix: {mount_path_prefix} is not in filePath: {file_path}\nPlease check your mount_path_prefix configuration in main.py")
+    try:
+        mount_path_prefix_remove = mount_path_prefix_remove.removesuffix("/")
+        mount_path_prefix_add = mount_path_prefix_add.removesuffix("/")
+
+        if file_path.startswith(mount_path_prefix_remove):
+            file_path = file_path[len(mount_path_prefix_remove):]
+
+        if mount_path_prefix_add:
+            file_path = mount_path_prefix_add + file_path
+    except Exception as e:
+        print(f"Error: convert_mount_path failed, {e}")
             
     if convert_special_chars:
         for char in special_chars_list:

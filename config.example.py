@@ -28,11 +28,15 @@ not_redirect_paths = ['/mnt/localpath/']
 convert_special_chars = False
 special_chars_list = ['？','：']
 
-# this configuration is for the situation that the mount path is not the same as the alist path
-# for example, in the emby server, the video path is /mnt/movie/xxx, but in the alist server, the video path is /movie/xxx
-# if you 100% sure that the mount path is the same as the alist path, you can ignore this configuration
+# 下面两项配置是为了处理挂载路径和Alist路径不一致的情况
+# 例如，在emby服务器中，视频路径是 /mnt/movie/xxx，但在alist中，视频路径是 /movie/xxx
+# 则需要配置 mount_path_prefix_remove 为 /mnt，该程序会移除文件路径中的 /mnt 部分
+# 同理，如果视频路径是 /movie/xxx，但在alist中，视频路径是 /mnt/movie/xxx，则需要配置 mount_path_prefix_add 为 /mnt
+# 顺序是先移除，再添加
+# 如果你100%确定挂载路径和Alist路径一致，可以忽略这两项配置
 convert_mount_path = False
-mount_path_prefix = "/"
+mount_path_prefix_remove = "/"
+mount_path_prefix_add = ""
 
 # 是否缓存视频前15秒用于播放加速
 enable_cache = False
