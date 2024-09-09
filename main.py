@@ -33,7 +33,7 @@ def get_file_info(item_id, MediaSourceId, apiKey) -> dict:
             data['Status'] = "Success"
             data['Path'] = i['Path']
             # data['DirectStreamUrl'] = i['DirectStreamUrl']
-            data['Protocol'] = i['Protocol']
+            # data['Protocol'] = i['Protocol']
             data['Bitrate'] = i['Bitrate'] 
             data['Size'] = i['Size']
             data['Container'] = i['Container']
@@ -68,7 +68,8 @@ def redirect_to_alist_raw_url(file_path, host_url) -> flask.Response:
         print("Redirected Url: " + raw_url)
         return flask.redirect(raw_url, code=302)
     else:
-        print(f"Error: {raw_url}")
+        print(f"Error: failed to get Alist Raw Url, {code}")
+        print(f"{raw_url}")
         return flask.Response(status=code, response=raw_url)
     
 
@@ -81,7 +82,8 @@ def redirect(item_id, filename):
     # Example: https://emby.example.com/emby/Videos/xxxxx/original.mp4?MediaSourceId=xxxxx&api_key=xxxxx
     
     api_key = extract_api_key(flask)
-    file_info = get_file_info(item_id, flask.request.args.get('MediaSourceId'), api_key)
+    media_source_id = flask.request.args.get('MediaSourceId') if 'MediaSourceId' in flask.request.args else flask.request.args.get('mediaSourceId')
+    file_info = get_file_info(item_id, media_source_id, api_key)
     host_url = flask.request.url_root
     
     if file_info['Status'] == "Error":

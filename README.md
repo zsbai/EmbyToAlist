@@ -41,8 +41,8 @@ location ~* ^/preventRedirect(/emby)?/videos/(\d*)/(stream|original).* {
     add_header Cache-Control no-cache;
     proxy_cache off;
 }
-# /emby/Videos/12345/xxx/Subtitles/3/0/Stream.ass?api_key=xx
-location ~* /videos/(\d*)/(stream|original).* {
+
+location ~* /videos/(.*)/(stream|original) {
     proxy_cache off;
     proxy_buffering off;
     proxy_set_header Host $host; 
@@ -55,7 +55,7 @@ location ~* /videos/(\d*)/(stream|original).* {
 }
 ```
 
-**注意：为确保请求头中的`Range`不丢失，确保中间的任何代理服务关闭缓存，如Cloudflare等。启用缓存会导致`Range`请求头丢失，从而使本地的缓存功能失效。**
+**注意：为确保请求头中的`Range`不丢失，确保中间的任何代理服务都不会缓存视频文件，如Cloudflare等。启用缓存视频文件会导致`Range`请求头丢失，从而使本地的缓存功能失效。**
 
 ## 配置文件说明
 
