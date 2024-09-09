@@ -193,22 +193,24 @@ location ~ / {
 
 使用 Cloudflare Cache Rule 缓存 Emby 全站，排除API等关键配置，思路来自于[Nolovenodie](https://github.com/Nolovenodie)/[emby-direct](https://github.com/Nolovenodie/emby-direct)项目
 
-在Cloudflare控制台打开Cache-Rule，缓存规则主要需要满足三个要点，切记顺序不能变：
-1. 缓存排除视频文件
+在Cloudflare控制台打开Cache-Rule，缓存规则主要需要满足三个要点，绕过api，视频，除此之外缓存全部内容；除此之外，顺序靠后的规则会覆盖掉靠前的规则，所以缓存全部内容的规则顺序需要放在第一位：
+
+1. 缓存全站
+
+<img width="818" alt="图片" src="https://github.com/zsbai/EmbyToAlist/assets/62942942/37873591-9ffe-40f7-bc67-83c69855133a">
+
+2. 缓存排除视频文件
 
 <img width="816" alt="图片" src="https://github.com/zsbai/EmbyToAlist/assets/62942942/bb7b094a-877a-4a50-ab0a-8dad3bf90926">
 
 缓存策略设置为 `Bypass`
 
-2. 排除所有 API 相关的请求
+3. 排除所有 API 相关的请求
 
 <img width="842" alt="图片" src="https://github.com/zsbai/EmbyToAlist/assets/62942942/cba98bc0-5c12-457c-a290-6a740fa81b7c">
 
 缓存策略设置为`Bypass`
 
-3. 缓存全站
-
-<img width="818" alt="图片" src="https://github.com/zsbai/EmbyToAlist/assets/62942942/37873591-9ffe-40f7-bc67-83c69855133a">
 
 缓存策略根据自己的喜欢设置，作为参考，我设置的 Edge TTL（在Cloudflare边缘节点上缓存时间）为6个月
 
