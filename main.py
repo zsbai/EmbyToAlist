@@ -134,7 +134,7 @@ def redirect(item_id, filename):
 
         # 响应头中的end byte
         resp_end_byte = cacheFileSize - 1
-        resp_file_size = cacheFileSize
+        resp_file_size = resp_end_byte + 1 - start_byte
 
         
         getCacheStatus_exists = get_cache_status(item_id, alist_path, start_byte)
@@ -168,7 +168,7 @@ def redirect(item_id, filename):
         if get_cache_status(item_id, path=alist_path, start_point=start_byte):
             if end_byte is None:
                 resp_end_byte = file_info['Size'] - 1
-                resp_file_size = file_info['Size'] - start_byte
+                resp_file_size = (resp_end_byte + 1) - start_byte
             else:
                 resp_end_byte = end_byte
                 resp_file_size = end_byte - start_byte + 1
