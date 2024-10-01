@@ -1,20 +1,25 @@
-import requests
-import flask
 from config import *
 from components.utils import *
 from components.cache import *
 from datetime import datetime
-import concurrent.futures
+import fastapi
+import uvicorn
+import httpx
+from contextlib import asynccontextmanager
 
-# 创建全局线程池
-executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+# 使用上下文管理器，创建异步请求客户端
+@asynccontextmanager
+async def lifespan(app: fastapi.FastAPI):
+    app.requests_client = httpx.AsyncClient()
+    yield
+    await app.requests_client.aclose()
 
-app = flask.Flask(__name__)
+app = fastapi.FastAPI(lifespan=lifespan)
 
 URL_CACHE = {}
     
 # used to get the file info from emby server
-def get_file_info(item_id, MediaSourceId, apiKey) -> dict:
+async def get_file_info(item_id, MediaSourceId, apiKey, client: httpx.AsyncClient) -> dict:
     """
     从Emby服务器获取文件信息
     
@@ -25,8 +30,11 @@ def get_file_info(item_id, MediaSourceId, apiKey) -> dict:
     """
     data = {}
     url = f"{emby_server}/emby/Items/{item_id}/PlaybackInfo?MediaSourceId={MediaSourceId}&api_key={apiKey}"
-    print("\n" + url)
-    req = requests.get(url).json()
+    print(f"{get_current_time()} - Requested Info URL: {url}")
+    req = await client.get(url)
+    if req is None: 
+        print(f"{get_current_time()} - Error: failed to get file info")
+        return data
     for i in req['MediaSources']:
         # print(i)
         if i['Id'] == MediaSourceId:
@@ -45,20 +53,20 @@ def get_file_info(item_id, MediaSourceId, apiKey) -> dict:
 
 # return Alist Raw Url
 @get_time
-def redirect_to_alist_raw_url(file_path, host_url) -> flask.Response:
-    """获取视频直链地址"""
+async def redirect_to_alist_raw_url(file_path, host_url, client=httpx.AsyncClient) -> fastapi.Response:
+    """创建Alist Raw Url并重定向"""
     cache_key = file_path + host_url
     if cache_key in URL_CACHE.keys():
         now_time = datetime.now().timestamp()
         if now_time - URL_CACHE[cache_key]['time'] < 300:
             print("\nAlist Raw URL Cache exists and is valid (less than 5 minutes)")
             print("Redirected Url: " + URL_CACHE[cache_key]['url'])
-            return flask.redirect(URL_CACHE[cache_key]['url'], code=302)
+            return fastapi.responses.RedirectResponse(url=URL_CACHE[cache_key]['url'], status_code=302)
         else:
             print("\nAlist Raw URL Cache is expired, re-fetching...")
             del URL_CACHE[cache_key]
     
-    raw_url, code = get_alist_raw_url(file_path, host_url=host_url)
+    raw_url, code = await get_alist_raw_url(file_path, host_url=host_url, client=client)
     
     if code == 200:
         URL_CACHE[cache_key] = {
@@ -66,51 +74,57 @@ def redirect_to_alist_raw_url(file_path, host_url) -> flask.Response:
             'time': datetime.now().timestamp()
             }
         print("Redirected Url: " + raw_url)
-        return flask.redirect(raw_url, code=302)
+        return fastapi.responses.RedirectResponse(url=raw_url, status_code=302)
     else:
         print(f"Error: failed to get Alist Raw Url, {code}")
         print(f"{raw_url}")
-        return flask.Response(status=code, response=raw_url)
+        return fastapi.HTTPException(status=code, detail=raw_url)
     
 
 # for infuse
-@app.route('/Videos/<item_id>/<filename>', methods=['GET'])
+@app.get('/Videos/{item_id}/{filename}')
 # for emby
-@app.route('/videos/<item_id>/<filename>', methods=['GET'])
-@app.route('/emby/videos/<item_id>/<filename>', methods=['GET'])
-def redirect(item_id, filename):
+@app.get('/videos/{item_id}/{filename}')
+@app.get('/emby/Videos/{item_id}/{filename}')
+async def redirect(item_id, filename, request: fastapi.Request, background_tasks: fastapi.BackgroundTasks):
     # Example: https://emby.example.com/emby/Videos/xxxxx/original.mp4?MediaSourceId=xxxxx&api_key=xxxxx
     
-    api_key = extract_api_key(flask)
-    media_source_id = flask.request.args.get('MediaSourceId') if 'MediaSourceId' in flask.request.args else flask.request.args.get('mediaSourceId')
-    file_info = get_file_info(item_id, media_source_id, api_key)
-    host_url = flask.request.url_root
+    api_key = extract_api_key(request)
+    media_source_id = fastapi.query_params.get('MediaSourceId') if 'MediaSourceId' in fastapi.query_params else fastapi.query_params.get('mediaSourceId')
+
+    if not media_source_id:
+        return fastapi.HTTPException(status_code=400, detail="MediaSourceId is required")
+
+    file_info = await get_file_info(item_id, media_source_id, api_key, client=app.requests_client)
+    # host_url example: https://emby.example.com:8096/
+    host_url = str(request.base_url)
     
     if file_info['Status'] == "Error":
         print(file_info['Message'])
-        return flask.Response(status=500, response=file_info['Message'])
+        return fastapi.HTTPException(status_code=500, detail=file_info['Message'])
     
     
     print(f"\n{get_current_time()} - Requested Item ID: {item_id}")
-    print("MediaFile Mount Path: " + file_info['Path'])
+    print("MediaFile Mount Path: " + file_info.get('Path', 'Unknown'))
     
     # if checkFilePath return False：return Emby originalUrl
     if not should_redirect_to_alist(file_info['Path']):
-        redirected_url = f"{host_url}preventRedirect{flask.request.full_path}"
+        # 拼接完整的URL，如果query为空则不加问号
+        redirected_url = f"{host_url}preventRedirect{request.url.path}{'?' + request.url.query if request.url.query else ''}"
         print("Redirected Url: " + redirected_url)
-        return flask.redirect(redirected_url, code=302)
+        return fastapi.response.RedirectResponse(url=redirected_url, status_code=302)
     
     alist_path = transform_file_path(file_info['Path'])
     
     # 如果没有启用缓存，直接返回Alist Raw Url
     if not enable_cache:
-        return redirect_to_alist_raw_url(alist_path, host_url)
+        return await redirect_to_alist_raw_url(alist_path, host_url, client=app.requests_client)
 
-    range_header = flask.request.headers.get('Range', '')
+    range_header = request.headers.get('Range', '')
     if not range_header.startswith('bytes='):
         print("\nWarning: Range header is not correctly formatted.")
-        print(flask.request.headers)
-        return redirect_to_alist_raw_url(alist_path, host_url)
+        print(request.headers)
+        return await redirect_to_alist_raw_url(alist_path, host_url, client=app.requests_client)
     
     # 解析Range头，获取请求的起始字节
     bytes_range = range_header.split('=')[1]
@@ -128,9 +142,9 @@ def redirect(item_id, filename):
     if start_byte < cacheFileSize:
         
         # 判断客户端是否在黑名单中
-        if any(user_agent.lower() in flask.request.headers.get('User-Agent', '').lower() for user_agent in cache_client_blacklist):
+        if any(user_agent.lower() in request.headers.get('User-Agent', '').lower() for user_agent in cache_client_blacklist):
                 print("Cache is disabled for this client")
-                return redirect_to_alist_raw_url(alist_path, host_url)
+                return await redirect_to_alist_raw_url(alist_path, host_url, client=app.requests_client)
 
         # 响应头中的end byte
         resp_end_byte = cacheFileSize - 1
@@ -154,14 +168,14 @@ def redirect(item_id, filename):
             print("Request Range Header: " + range_header)
             print("Response Range Header: " + f"bytes {start_byte}-{resp_end_byte}/{file_info['Size']}")
             print("Response Content-Length: " + f'{resp_file_size}')
-            return flask.Response(read_cache_file(item_id, alist_path, start_byte, cacheFileSize), headers=resp_headers, status=206)
+            return fastapi.responses.StreamingResponse(await read_cache_file(item_id, alist_path, start_byte, cacheFileSize), headers=resp_headers, status=206)
         else:
-            # 启动线程缓存文件
-            future = executor.submit(write_cache_file, item_id, alist_path, flask.request.headers, cacheFileSize, start_byte, file_size=None, host_url=host_url)
-            future.add_done_callback(lambda future: print(future.result()))
+            # 后台任务缓存文件
+            background_tasks.add_task(write_cache_file, item_id, alist_path, request.headers, cacheFileSize, start_byte, file_size=None, host_url=host_url)
+            print(f"{get_current_time()}: Started background task to write cache file.")
 
             # 重定向到原始URL
-            return redirect_to_alist_raw_url(alist_path, host_url)
+            return await redirect_to_alist_raw_url(alist_path, host_url, client=app.requests_client)
      
     # 应该走缓存的情况2：请求文件末尾
     elif file_info['Size'] - start_byte < 2 * 1024 * 1024:
@@ -187,14 +201,14 @@ def redirect(item_id, filename):
             print("Request Range Header: " + range_header)
             print("Response Range Header: " + f"bytes {start_byte}-{resp_end_byte}/{file_info['Size']}")
             print("Response Content-Length: " + f'{resp_file_size}')
-            return flask.Response(read_cache_file(item_id=item_id, path=alist_path, start_point=start_byte, end_point=end_byte), headers=resp_headers, status=206)
+            return fastapi.responses.StreamingResponse(await read_cache_file(item_id=item_id, path=alist_path, start_point=start_byte, end_point=end_byte), headers=resp_headers, status=206)
         else:
-            # 启动线程缓存文件
-            future = executor.submit(write_cache_file, item_id, alist_path, flask.request.headers, 0, start_byte, file_info['Size'], host_url)
-            future.add_done_callback(lambda future: print(future.result()))
+            # 后台任务缓存文件
+            background_tasks.add_task(write_cache_file, item_id, alist_path, request.headers, start_byte, file_size=None, host_url=host_url)
+            print(f"{get_current_time()}: Started background task to write cache file.")
 
             # 重定向到原始URL
-            return redirect_to_alist_raw_url(alist_path, host_url)
+            return await redirect_to_alist_raw_url(alist_path, host_url, client=app.requests_client)
     # 应该走缓存的情况3：缓存文件存在
     elif get_cache_status(item_id, path=alist_path, start_point=start_byte):
         resp_end_byte = 20 * 1024 * 1024 + start_byte - 1
@@ -214,17 +228,17 @@ def redirect(item_id, filename):
         print("Request Range Header: " + range_header)
         print("Response Range Header: " + f"bytes {start_byte}-{resp_end_byte}/{file_info['Size']}")
         print("Response Content-Length: " + f'{resp_file_size}')
-        return flask.Response(read_cache_file(item_id=item_id, path=alist_path, start_point=start_byte, end_point=end_byte), headers=resp_headers, status=206)
+        return fastapi.responses.StreamingResponse(await read_cache_file(item_id=item_id, path=alist_path, start_point=start_byte, end_point=end_byte), headers=resp_headers, status=206)
     
     else:
         print("Request Range is not in cache range, redirect to Alist Raw Url")
         print("Request Range Header: " + range_header)
-        return redirect_to_alist_raw_url(alist_path, host_url)
+        return await redirect_to_alist_raw_url(alist_path, host_url, client=app.requests_client)
 
 
-@app.route('/emby/webhook', methods=['POST'])
+@app.post('/emby/webhook')
 def webhook():
     pass
 
 if __name__ == "__main__":
-    app.run(port=60001, debug=True, threaded=True, host='0.0.0.0')
+    uvicorn.run(app, port=60001, host='0.0.0.0')

@@ -1,12 +1,20 @@
 from datetime import datetime
 import os
-import requests
 from components.utils import *
+import httpx
+import aiofiles
+from typing import AsyncGenerator, Optional
 
 
-def read_file(file_path: str, start_point: int = 0, end_point = None, chunk_size: int = 1024*1024, auto_delete=False):
+async def read_file(
+    file_path: str, 
+    start_point: int = 0, 
+    end_point: Optional[int] = None, 
+    chunk_size: int = 1024*1024, 
+    auto_delete=False
+    ) -> AsyncGenerator[bytes, None]:
     """
-    读取文件的指定范围，并返回生成器
+    读取文件的指定范围，并返回异步生成器
    
     :param file_path: 缓存文件路径
     :param start_point: 文件读取起始点
@@ -15,8 +23,8 @@ def read_file(file_path: str, start_point: int = 0, end_point = None, chunk_size
     :return: 生成器，每次返回 chunk_size 大小的数据
     """
     try:
-        with open(file_path, 'rb') as f:
-            f.seek(start_point)
+        async with aiofiles.open(file_path, 'rb') as f:
+            await f.seek(start_point)
             while True:
                 if end_point is not None:
                     remaining = end_point - f.tell()
@@ -24,7 +32,7 @@ def read_file(file_path: str, start_point: int = 0, end_point = None, chunk_size
                         break
                     chunk_size = min(chunk_size, remaining)
                 
-                data = f.read(chunk_size)
+                data = await f.read(chunk_size)
                 if not data:
                     break
                 yield data
@@ -38,11 +46,11 @@ def read_file(file_path: str, start_point: int = 0, end_point = None, chunk_size
         print(f"Unexpected error occurred while reading file: {e}")
     finally:
         if auto_delete:
-            os.remove(file_path)
+            await aiofiles.os.remove(file_path)
             print(f"Cache File Auto Deleted: {file_path}")
 
 
-def write_cache_file(item_id, path, req_header=None, cache_size=52428800, start_point=0, file_size=None, host_url=None) -> bool:
+async def write_cache_file(item_id, path, req_header=None, cache_size=52428800, start_point=0, file_size=None, host_url=None, client: httpx.AsyncClient=None) -> bool:
     """
     写入缓存文件，end point通过cache_size计算得出
     
@@ -67,7 +75,7 @@ def write_cache_file(item_id, path, req_header=None, cache_size=52428800, start_
         return
     
     # 获取Alist Raw Url
-    raw_url, code = get_alist_raw_url(path, host_url)
+    raw_url, code = await get_alist_raw_url(path, host_url, client)
     if code != 200:
         print(f"{get_current_time()}-Cache Error {start_point}-{end_point}, Alist Return: code: {code} and url: {raw_url}")
         return False
@@ -96,7 +104,7 @@ def write_cache_file(item_id, path, req_header=None, cache_size=52428800, start_
                     print(f"{get_current_time()}-Write Cache Error: Cache file for range {start_point} may is still writing.")
                     return False
                 print(f"{get_current_time()}-WARNING: Existing Cache Range within new range. Deleting old cache.")
-                os.remove(os.path.join(cache_path, subdirname, dirname, file))
+                aiofiles.os.remove(os.path.join(cache_path, subdirname, dirname, file))
     
     # 创建一个空文件 防止后续被重复缓存
     with open(cache_file_path, 'w') as f:
@@ -115,26 +123,26 @@ def write_cache_file(item_id, path, req_header=None, cache_size=52428800, start_
 
     # 如果请求失败，删除空缓存文件
     try:
-        resp = requests.get(raw_url, headers=req_header, stream=True)
+        resp = client.get(raw_url, headers=req_header)
     except Exception as e:
         print(f"{get_current_time()}-Write Cache Error {start_point}-{end_point}: {e}")
-        os.remove(cache_file_path)
+        aiofiles.os.remove(cache_file_path)
         return False
     
     if resp.status_code == 206: 
         # print(f"Start to write cache file: {item_id}")
-        with open (cache_file_path, 'wb') as f:
-            for chunk in resp.iter_content(chunk_size=1024):
-                f.write(chunk)
+        async with aiofiles.open(cache_file_path, 'wb') as f:
+            async for chunk in resp.aiter_content(chunk_size=1024):
+                await f.write(chunk)
                 
         print(f"{get_current_time()}-Write Cache file {start_point}-{end_point}: {item_id} has been written, file path: {cache_file_path}")
         return True
     else:
         print(f"{get_current_time()}-Write Cache Error {start_point}-{end_point}: Upstream return code: {resp.status_code}")
-        os.remove(cache_file_path)
+        aiofiles.os.remove(cache_file_path)
         return False
     
-def read_cache_file(item_id, path, start_point=0, end_point=None):
+async def read_cache_file(item_id, path, start_point=0, end_point=None):
     """
     读取缓存文件
     
@@ -155,7 +163,7 @@ def read_cache_file(item_id, path, start_point=0, end_point=None):
         if file.startswith('cache_delete_tag_'):
             cache_delete_start_point_tag = int(file.split('_')[-1])
             # 删除标记文件
-            os.remove(os.path.join(cache_path, subdirname, dirname, file))
+            aiofiles.os.remove(os.path.join(cache_path, subdirname, dirname, file))
             
         if file.startswith('cache_file_'):
             range_start, range_end = map(int, file.split('_')[2:4])
@@ -165,7 +173,7 @@ def read_cache_file(item_id, path, start_point=0, end_point=None):
                 
                 # 检查是否需要删除
                 auto_delete = cache_delete_start_point_tag is not None and range_start <= cache_delete_start_point_tag <= range_end
-                return read_file(os.path.join(cache_path, subdirname, dirname, file), start_point-range_start, adjusted_end_point, auto_delete=auto_delete)
+                return await read_file(os.path.join(cache_path, subdirname, dirname, file), start_point-range_start, adjusted_end_point, auto_delete=auto_delete)
             
     print(f"{get_current_time()}-Read Cache Error: There is no cache file in the cache directory: {path}.")
     return False
@@ -195,7 +203,7 @@ def get_cache_status(item_id, path, start_point=0) -> bool:
     print(f"{get_current_time()}-Get Cache Error: Cache file for range {start_point} not found.")
     return False
 
-def delete_cache_file(item_id, path, start_point=0):
+async def delete_cache_file(item_id, path, start_point=0):
     """
     删除range包含start_point的缓存文件
     """
@@ -209,7 +217,7 @@ def delete_cache_file(item_id, path, start_point=0):
         if file.startswith('cache_file_'):
             range_start, range_end = map(int, file.split('_')[2:4])
             if range_start <= start_point <= range_end:
-                os.remove(os.path.join(cache_path, subdirname, dirname, file))
+                aiofiles.os.remove(os.path.join(cache_path, subdirname, dirname, file))
                 print(f"{get_current_time()}-Delete Cache file {range_start}-{range_end}: {item_id}")
                 return True
         

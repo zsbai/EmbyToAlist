@@ -2,11 +2,12 @@ from datetime import datetime
 import hashlib
 import os
 import re
-import requests
 from config import *
+import fastapi
+import httpx
 
 
-def get_current_time():
+def get_current_time() -> str:
     """获取当前时间，并格式化为包含毫秒的字符串"""
     return datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
 
@@ -21,7 +22,7 @@ def get_time(func):
         return result
     return wrapper
 
-def get_content_type(container):
+def get_content_type(container) -> str:
     """文件格式对应的Content-Type映射"""
     content_types = {
         'mp4': 'video/mp4',
@@ -37,7 +38,7 @@ def get_content_type(container):
     # 返回对应的Content-Type，如果未找到，返回一个默认值
     return content_types.get(container.lower(), 'application/octet-stream')
 
-def get_hash_subdirectory_from_path(file_path):
+def get_hash_subdirectory_from_path(file_path) -> tuple:
     """
     计算给定文件路径的MD5哈希，并返回哈希值的前两位作为子目录名称。
     电影：只计算视频文件本身的上层文件夹路径
@@ -103,18 +104,18 @@ def transform_file_path(file_path, mount_path_prefix_remove=mount_path_prefix_re
     if convert_mount_path or convert_special_chars: print(f"\nProcessed FilePath: {file_path}")
     return file_path
 
-def extract_api_key(flask):
+def extract_api_key(request: fastapi.Request):
     """从请求中提取API密钥"""
-    api_key = flask.request.args.get('api_key')
+    api_key = request.query_params.get('api_key')
     if not api_key:
-        auth_header = flask.request.headers.get('X-Emby-Authorization')
+        auth_header = request.headers.get('X-Emby-Authorization')
         if auth_header:
             match_token = re.search(r'Token="([^"]+)"', auth_header)
             if match_token:
                 api_key = match_token.group(1)
     return api_key or emby_key
 
-def get_alist_raw_url(file_path, host_url) -> tuple:
+async def get_alist_raw_url(file_path, host_url, client: httpx.AsyncClient) -> tuple:
     """根据文件路径获取Alist Raw Url"""
     
     alist_api_url = f"{alist_server}/api/fs/get"
@@ -129,7 +130,7 @@ def get_alist_raw_url(file_path, host_url) -> tuple:
     }
     
     try:
-        req = requests.post(alist_api_url, json=body, headers=header).json()
+        req = client.post(alist_api_url, json=body, headers=header).json()
     except Exception as e:
         print(e)
         return ('Alist Server Error', 500)
@@ -171,3 +172,19 @@ def get_alist_raw_url(file_path, host_url) -> tuple:
         print(f"Error: {req['message']}")
         # return flask.Response(status=500, response=req['message'])
         return (req['message'], 500)
+    
+async def fetch_stream(url: str, client: httpx.AsyncClient) -> httpx.Response:
+    """
+    通过HTTPX异步客户端获取URL的响应
+
+    :param url: 请求的URL
+    :param client: HTTPX异步客户端
+    :return: HTTPX响应
+    """
+    try:
+        response = await client.get(url)
+        response.raise_for_status()
+        return response
+    except Exception as e:
+        print(f"HTTPX Request Error: {e}")
+        return None
