@@ -142,7 +142,7 @@ async def write_cache_file(item_id, path, req_header=None, cache_size=52428800, 
         aiofiles.os.remove(cache_file_path)
         return False
     
-async def read_cache_file(item_id, path, start_point=0, end_point=None):
+def read_cache_file(item_id, path, start_point=0, end_point=None):
     """
     读取缓存文件
     

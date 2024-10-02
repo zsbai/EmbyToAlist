@@ -130,7 +130,9 @@ async def get_alist_raw_url(file_path, host_url, client: httpx.AsyncClient) -> t
     }
     
     try:
-        req = client.post(alist_api_url, json=body, headers=header).json()
+        req = await client.post(alist_api_url, json=body, headers=header)
+        req.raise_for_status()
+        req = req.json()
     except Exception as e:
         print(e)
         return ('Alist Server Error', 500)
