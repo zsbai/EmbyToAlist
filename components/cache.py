@@ -123,7 +123,7 @@ async def write_cache_file(item_id, path, req_header=None, cache_size=52428800, 
 
     # 如果请求失败，删除空缓存文件
     try:
-        resp = client.get(raw_url, headers=req_header)
+        resp = await client.get(raw_url, headers=req_header)
     except Exception as e:
         print(f"{get_current_time()}-Write Cache Error {start_point}-{end_point}: {e}")
         aiofiles.os.remove(cache_file_path)
