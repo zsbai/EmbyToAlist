@@ -5,6 +5,7 @@ import re
 from config import *
 import fastapi
 import httpx
+from typing import AsyncGenerator, Optional
 
 
 def get_current_time() -> str:
@@ -174,19 +175,16 @@ async def get_alist_raw_url(file_path, host_url, client: httpx.AsyncClient) -> t
         print(f"Error: {req['message']}")
         # return flask.Response(status=500, response=req['message'])
         return (req['message'], 500)
-    
-async def fetch_stream(url: str, client: httpx.AsyncClient) -> httpx.Response:
+        
+async def reverse_proxy(cache: AsyncGenerator[bytes, None], url: str, client: httpx.AsyncClient) -> httpx.Response:
     """
-    通过HTTPX异步客户端获取URL的响应
+    读取缓存数据和URL，返回合并后的流
 
     :param url: 请求的URL
     :param client: HTTPX异步客户端
     :return: HTTPX响应
     """
-    try:
-        response = await client.get(url)
-        response.raise_for_status()
-        return response
-    except Exception as e:
-        print(f"HTTPX Request Error: {e}")
-        return None
+    resp = await client.get(url)
+    pass
+    
+    
