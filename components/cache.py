@@ -173,10 +173,10 @@ async def read_cache_file(item_id, path, start_point=0, end_point=None):
                 
                 # 检查是否需要删除
                 auto_delete = cache_delete_start_point_tag is not None and range_start <= cache_delete_start_point_tag <= range_end
-                return await read_file(os.path.join(cache_path, subdirname, dirname, file), start_point-range_start, adjusted_end_point, auto_delete=auto_delete)
+                return read_file(os.path.join(cache_path, subdirname, dirname, file), start_point-range_start, adjusted_end_point, auto_delete=auto_delete)
             
     print(f"{get_current_time()}-Read Cache Error: There is no cache file in the cache directory: {path}.")
-    return False
+    return None
 
 def get_cache_status(item_id, path, start_point=0) -> bool:
     """

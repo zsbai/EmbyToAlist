@@ -32,6 +32,7 @@ async def get_file_info(item_id, MediaSourceId, apiKey, client: httpx.AsyncClien
     url = f"{emby_server}/emby/Items/{item_id}/PlaybackInfo?MediaSourceId={MediaSourceId}&api_key={apiKey}"
     print(f"{get_current_time()} - Requested Info URL: {url}")
     req = await client.get(url)
+    req = req.json()
     if req is None: 
         print(f"{get_current_time()} - Error: failed to get file info")
         return data
@@ -86,11 +87,12 @@ async def redirect_to_alist_raw_url(file_path, host_url, client=httpx.AsyncClien
 # for emby
 @app.get('/videos/{item_id}/{filename}')
 @app.get('/emby/Videos/{item_id}/{filename}')
+@app.get('/emby/videos/{item_id}/{filename}')
 async def redirect(item_id, filename, request: fastapi.Request, background_tasks: fastapi.BackgroundTasks):
     # Example: https://emby.example.com/emby/Videos/xxxxx/original.mp4?MediaSourceId=xxxxx&api_key=xxxxx
     
     api_key = extract_api_key(request)
-    media_source_id = fastapi.query_params.get('MediaSourceId') if 'MediaSourceId' in fastapi.query_params else fastapi.query_params.get('mediaSourceId')
+    media_source_id = request.query_params.get('MediaSourceId') if 'MediaSourceId' in request.query_params else request.query_params.get('mediaSourceId')
 
     if not media_source_id:
         return fastapi.HTTPException(status_code=400, detail="MediaSourceId is required")
@@ -168,7 +170,7 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
             print("Request Range Header: " + range_header)
             print("Response Range Header: " + f"bytes {start_byte}-{resp_end_byte}/{file_info['Size']}")
             print("Response Content-Length: " + f'{resp_file_size}')
-            return fastapi.responses.StreamingResponse(await read_cache_file(item_id, alist_path, start_byte, cacheFileSize), headers=resp_headers, status=206)
+            return fastapi.responses.StreamingResponse(read_cache_file(item_id, alist_path, start_byte, cacheFileSize), headers=resp_headers, status_code=206)
         else:
             # 后台任务缓存文件
             background_tasks.add_task(write_cache_file, item_id, alist_path, request.headers, cacheFileSize, start_byte, file_size=None, host_url=host_url)
@@ -201,7 +203,7 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
             print("Request Range Header: " + range_header)
             print("Response Range Header: " + f"bytes {start_byte}-{resp_end_byte}/{file_info['Size']}")
             print("Response Content-Length: " + f'{resp_file_size}')
-            return fastapi.responses.StreamingResponse(await read_cache_file(item_id=item_id, path=alist_path, start_point=start_byte, end_point=end_byte), headers=resp_headers, status=206)
+            return fastapi.responses.StreamingResponse(read_cache_file(item_id=item_id, path=alist_path, start_point=start_byte, end_point=end_byte), headers=resp_headers, status_code=206)
         else:
             # 后台任务缓存文件
             background_tasks.add_task(write_cache_file, item_id, alist_path, request.headers, start_byte, file_size=None, host_url=host_url)
@@ -228,7 +230,7 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
         print("Request Range Header: " + range_header)
         print("Response Range Header: " + f"bytes {start_byte}-{resp_end_byte}/{file_info['Size']}")
         print("Response Content-Length: " + f'{resp_file_size}')
-        return fastapi.responses.StreamingResponse(await read_cache_file(item_id=item_id, path=alist_path, start_point=start_byte, end_point=end_byte), headers=resp_headers, status=206)
+        return fastapi.responses.StreamingResponse(read_cache_file(item_id=item_id, path=alist_path, start_point=start_byte, end_point=end_byte), headers=resp_headers, status_code=206)
     
     else:
         print("Request Range is not in cache range, redirect to Alist Raw Url")
