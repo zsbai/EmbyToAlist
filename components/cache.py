@@ -117,7 +117,7 @@ async def write_cache_file(item_id, path, req_header=None, cache_size=52428800, 
     else:
         req_header = dict(req_header) # Copy the headers
         
-    req_header['Host'] = raw_url.split('/')[2]
+    # req_header['Host'] = raw_url.split('/')[2]
       
     # Modify the range to startPoint-first50M
     req_header['Range'] = f"bytes={start_point}-{end_point}"
@@ -127,7 +127,7 @@ async def write_cache_file(item_id, path, req_header=None, cache_size=52428800, 
         resp = await client.get(raw_url, headers=req_header)
     except Exception as e:
         print(f"{get_current_time()}-Write Cache Error {start_point}-{end_point}: {e}")
-        aiofiles.os.remove(cache_file_path)
+        await aiofiles.os.remove(cache_file_path)
         return False
     
     if resp.status_code == 206: 
@@ -140,7 +140,7 @@ async def write_cache_file(item_id, path, req_header=None, cache_size=52428800, 
         return True
     else:
         print(f"{get_current_time()}-Write Cache Error {start_point}-{end_point}: Upstream return code: {resp.status_code}")
-        aiofiles.os.remove(cache_file_path)
+        await aiofiles.os.remove(cache_file_path)
         return False
     
 def read_cache_file(item_id, path, start_point=0, end_point=None):
@@ -166,7 +166,7 @@ def read_cache_file(item_id, path, start_point=0, end_point=None):
         if file.startswith('cache_delete_tag_'):
             cache_delete_start_point_tag = int(file.split('_')[-1])
             # 删除标记文件
-            aiofiles.os.remove(os.path.join(file_dir, file))
+            os.remove(os.path.join(file_dir, file))
             
         if file.startswith('cache_file_'):
             range_start, range_end = map(int, file.split('_')[2:4])
@@ -220,7 +220,7 @@ async def delete_cache_file(item_id, path, start_point=0):
         if file.startswith('cache_file_'):
             range_start, range_end = map(int, file.split('_')[2:4])
             if range_start <= start_point <= range_end:
-                aiofiles.os.remove(os.path.join(cache_path, subdirname, dirname, file))
+                await aiofiles.os.remove(os.path.join(cache_path, subdirname, dirname, file))
                 print(f"{get_current_time()}-Delete Cache file {range_start}-{range_end}: {item_id}")
                 return True
         
