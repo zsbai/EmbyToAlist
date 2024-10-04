@@ -173,8 +173,6 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
             return fastapi.responses.StreamingResponse(read_cache_file(item_id, alist_path, start_byte, cacheFileSize), headers=resp_headers, status_code=206)
         else:
             print("Request Range Header: " + range_header)
-            print("Response Range Header: " + f"bytes {start_byte}-{resp_end_byte}/{file_info['Size']}")
-            print("Response Content-Length: " + f'{resp_file_size}')
             # 后台任务缓存文件
             background_tasks.add_task(write_cache_file, item_id, alist_path, request.headers, cacheFileSize, start_byte, file_size=None, host_url=host_url, client=app.requests_client)
             print(f"{get_current_time()}: Started background task to write cache file.")
@@ -209,10 +207,8 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
             return fastapi.responses.StreamingResponse(read_cache_file(item_id=item_id, path=alist_path, start_point=start_byte, end_point=end_byte), headers=resp_headers, status_code=206)
         else:
             print("Request Range Header: " + range_header)
-            print("Response Range Header: " + f"bytes {start_byte}-{resp_end_byte}/{file_info['Size']}")
-            print("Response Content-Length: " + f'{resp_file_size}')
             # 后台任务缓存文件
-            background_tasks.add_task(write_cache_file, item_id, alist_path, request.headers, start_byte, file_size=None, host_url=host_url, client=app.requests_client)
+            background_tasks.add_task(write_cache_file, item_id=item_id, path=alist_path, req_header=request.headers, cache_size=0, start_point=start_byte, file_size=file_info['Size'], host_url=host_url, client=app.requests_client)
             print(f"{get_current_time()}: Started background task to write cache file.")
 
             # 重定向到原始URL

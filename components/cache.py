@@ -72,7 +72,7 @@ async def write_cache_file(item_id, path, req_header=None, cache_size=52428800, 
     elif file_size is not None:
         end_point = file_size - 1
     else:
-        print(f"{get_current_time()}-Cache Error {start_point}-{end_point}, File Size is None")
+        print(f"{get_current_time()}-Cache Error {start_point}, File Size is None")
         return
     
     # 获取Alist Raw Url
@@ -86,6 +86,12 @@ async def write_cache_file(item_id, path, req_header=None, cache_size=52428800, 
     print(f"\n {get_current_time()} - Start to cache file {start_point}-{end_point}: {item_id}, file path: {cache_file_path}")
     
     os.makedirs(os.path.dirname(cache_file_path), exist_ok=True)
+     
+    # 创建一个空文件标签。防止在写入的时候被读取
+    cache_write_tag_path = os.path.join(cache_path, subdirname, dirname, f'cache_writing_tag')
+    if not os.path.exists(cache_write_tag_path):
+        with open(cache_write_tag_path, 'w') as f:
+            pass
     
     # 检查是否已有包含当前范围的缓存文件
     for file in os.listdir(os.path.join(cache_path, subdirname, dirname)):
@@ -117,10 +123,10 @@ async def write_cache_file(item_id, path, req_header=None, cache_size=52428800, 
     else:
         req_header = dict(req_header) # Copy the headers
         
-    # req_header['Host'] = raw_url.split('/')[2]
+    req_header['host'] = raw_url.split('/')[2]
       
     # Modify the range to startPoint-first50M
-    req_header['Range'] = f"bytes={start_point}-{end_point}"
+    req_header['range'] = f"bytes={start_point}-{end_point}"
 
     # 如果请求失败，删除空缓存文件
     try:
@@ -133,10 +139,13 @@ async def write_cache_file(item_id, path, req_header=None, cache_size=52428800, 
     if resp.status_code == 206: 
         # print(f"Start to write cache file: {item_id}")
         async with aiofiles.open(cache_file_path, 'wb') as f:
-            async for chunk in resp.aiter_content(chunk_size=1024):
+            async for chunk in resp.aiter_bytes(chunk_size=1024):
                 await f.write(chunk)
                 
         print(f"{get_current_time()}-Write Cache file {start_point}-{end_point}: {item_id} has been written, file path: {cache_file_path}")
+        
+        if os.path.exists(cache_write_tag_path):
+            os.remove(cache_write_tag_path)
         return True
     else:
         print(f"{get_current_time()}-Write Cache Error {start_point}-{end_point}: Upstream return code: {resp.status_code}")
@@ -194,6 +203,10 @@ def get_cache_status(item_id, path, start_point=0) -> bool:
     
     if os.path.exists(os.path.join(cache_path, subdirname, dirname)) is False:
         print(f"{get_current_time()}-Get Cache Error: Cache directory does not exist: {os.path.join(cache_path, subdirname, dirname)}")
+        return False
+    
+    if os.path.exists(os.path.join(cache_path, subdirname, dirname, f'cache_writing_tag')):
+        print(f"{get_current_time()}-Get Cache Error: Some Cache files are still writing.")
         return False
     
     # 查找与 startPoint 匹配的缓存文件，endPoint 为文件名的一部分
