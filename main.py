@@ -155,7 +155,7 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
                 'Content-Type': get_content_type(file_info['Container']),
                 'Accept-Ranges': 'bytes',
                 'Content-Range': f"bytes {start_byte}-{resp_end_byte}/{file_info['Size']}",
-                'Content-Length': f'{file_info["Size"] - start_byte}',
+                'Content-Length': f'{resp_end_byte - start_byte + 1}',
                 'Cache-Control': 'private, no-transform, no-cache',
                 'X-EmbyToAList-Cache': 'Hit',
             }

@@ -24,12 +24,13 @@ async def read_file(
     auto_delete=False
     ) -> AsyncGenerator[bytes, None]:
     """
-    读取文件的指定范围，并返回异步生成器
+    读取文件的指定范围，并返回异步生成器。
    
     :param file_path: 缓存文件路径
     :param start_point: 文件读取起始点
     :param end_point: 文件读取结束点，None 表示文件末尾
     :param chunk_size: 每次读取的字节数，默认为 1MB
+    
     :return: 生成器，每次返回 chunk_size 大小的数据
     """
     try:
@@ -37,7 +38,8 @@ async def read_file(
             await f.seek(start_point)
             while True:
                 if end_point is not None:
-                    remaining = end_point - f.tell()
+                    # 传入的range为http请求头的range，直接传入默认会少读取1个字节，所以需要+1
+                    remaining = (end_point+1) - await f.tell()
                     if remaining <= 0:
                         break
                     chunk_size = min(chunk_size, remaining)
