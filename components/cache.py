@@ -171,21 +171,14 @@ def read_cache_file(item_id, path, start_point=0, end_point=None):
     :param path: 文件路径
     :param start_point: 缓存文件的起始点
     :param end_point: 缓存文件的结束点
-    :param auto_delete: 是否在读取完后删除文件
+    
     :return: 缓存文件的内容
     """
     subdirname, dirname = get_hash_subdirectory_from_path(path)
     file_dir = os.path.join(cache_path, subdirname, dirname)
     
-    # 应该为start point标记，如果不为None，则读取完后删除文件
-    # 需要删除的缓存文件的起始点，如果包含则删除
-    cache_delete_start_point_tag = None
     # 查找与 startPoint 匹配的缓存文件，endPoint 为文件名的一部分
     for file in os.listdir(file_dir):
-        if file.startswith('cache_delete_tag_'):
-            cache_delete_start_point_tag = int(file.split('_')[-1])
-            # 删除标记文件
-            os.remove(os.path.join(file_dir, file))
             
         if file.startswith('cache_file_'):
             range_start, range_end = map(int, file.split('_')[2:4])
@@ -193,11 +186,9 @@ def read_cache_file(item_id, path, start_point=0, end_point=None):
                 # 调整 end_point 的值
                 adjusted_end_point = None if end_point is None or end_point > range_end else end_point - start_point
                 
-                # 检查是否需要删除
-                auto_delete = cache_delete_start_point_tag is not None and range_start <= cache_delete_start_point_tag <= range_end
                 print(f"{get_current_time()}-Read Cache: {os.path.join(file_dir, file)}")
 
-                return read_file(os.path.join(file_dir, file), start_point-range_start, adjusted_end_point, auto_delete=auto_delete)
+                return read_file(os.path.join(file_dir, file), start_point-range_start, adjusted_end_point)
             
     print(f"{get_current_time()}-Read Cache Error: There is no cache file in the cache directory: {path}.")
     return None
@@ -254,16 +245,3 @@ async def delete_cache_file(item_id, path, start_point=0):
         
     print(f"{get_current_time()}-Delete Cache Error: Cache file for range {start_point} not found.")
     return False
-
-def create_cache_delete_tag(item_id, path, start_point=0):
-    """
-    创建一个空文件，用于标记缓存文件应该在使用完后删除
-    """
-    subdirname, dirname = get_hash_subdirectory_from_path(path)
-    
-    if not os.path.exists(os.path.join(cache_path, subdirname, dirname)):
-        print(f"{get_current_time()}-Create Cache Delete Tag Error: Cache directory does not exist: {os.path.join(cache_path, subdirname, dirname)}")
-        return False
-    
-    with open(os.path.join(cache_path, subdirname, dirname, f'cache_delete_tag_{start_point}'), 'w') as f:
-        pass
