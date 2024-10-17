@@ -145,15 +145,6 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
     # 应该走缓存的情况1：请求文件开头
     if start_byte < cacheFileSize:
         
-        # # 判断客户端是否在黑名单中
-        # if any(user_agent.lower() in request.headers.get('User-Agent', '').lower() for user_agent in cache_client_blacklist):
-        #         print("Cache is disabled for this client")
-        #         return await redirect_to_alist_raw_url(alist_path, host_url, client=app.requests_client)
-
-        ## 响应头中的end byte
-        # resp_end_byte = cacheFileSize - 1
-        # resp_file_size = resp_end_byte + 1 - start_byte
-        
         # 如果请求末尾在cache范围内
         cache_end_byte = cacheFileSize if end_byte is None or end_byte > cacheFileSize else end_byte
         resp_end_byte = file_info['Size'] - 1 if end_byte is None or end_byte > cache_end_byte else cache_end_byte

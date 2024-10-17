@@ -41,4 +41,3 @@ mount_path_prefix_add = ""
 # 是否缓存视频前15秒用于播放加速
 enable_cache = False
 cache_path = "/root/EmbyToAlist/cache"
-cache_client_blacklist = ['vlc', 'infuse']
