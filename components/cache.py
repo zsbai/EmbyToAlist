@@ -96,12 +96,12 @@ async def write_cache_file(item_id, path, req_header=None, cache_size=52428800, 
     # 检查是否已有包含当前范围的缓存文件
     for file in os.listdir(os.path.join(cache_path, subdirname, dirname)):
         if file.startswith('cache_file_'):
-            range_start, range_end = map(int, file.split('_')[2:4])
+            file_range_start, file_range_end = map(int, file.split('_')[2:4])
             
-            if start_point >= range_start and end_point <= range_end:
+            if start_point >= file_range_start and end_point <= file_range_end:
                 print(f"{get_current_time()}-WARNING: Cache Range Already Exists. Abort.")
                 return False
-            elif start_point <= range_start and end_point >= range_end:
+            elif start_point <= file_range_start and end_point >= file_range_end:
                 full_path = os.path.join(cache_path, subdirname, dirname, file)
                 mod_time = os.path.getmtime(full_path)
                 now_time = datetime.now().timestamp()
@@ -111,7 +111,7 @@ async def write_cache_file(item_id, path, req_header=None, cache_size=52428800, 
                     print(f"{get_current_time()}-Write Cache Error: Cache file for range {start_point}-{end_point} may is still writing.")
                     return False
                 print(f"{get_current_time()}-WARNING: Existing Cache Range within new range. Deleting old cache.")
-                aiofiles.os.remove(os.path.join(cache_path, subdirname, dirname, file))
+                await aiofiles.os.remove(os.path.join(cache_path, subdirname, dirname, file))
     
     # 创建一个空文件 防止后续被重复缓存
     with open(cache_file_path, 'w') as f:
@@ -165,7 +165,6 @@ def read_cache_file(item_id, path, start_point=0, end_point=None):
     """
     subdirname, dirname = get_hash_subdirectory_from_path(path)
     file_dir = os.path.join(cache_path, subdirname, dirname)
-    print(f"{get_current_time()}-Read Cache: {file_dir}")
     
     # 应该为start point标记，如果不为None，则读取完后删除文件
     # 需要删除的缓存文件的起始点，如果包含则删除
@@ -185,6 +184,8 @@ def read_cache_file(item_id, path, start_point=0, end_point=None):
                 
                 # 检查是否需要删除
                 auto_delete = cache_delete_start_point_tag is not None and range_start <= cache_delete_start_point_tag <= range_end
+                print(f"{get_current_time()}-Read Cache: {os.path.join(file_dir, file)}")
+
                 return read_file(os.path.join(file_dir, file), start_point-range_start, adjusted_end_point, auto_delete=auto_delete)
             
     print(f"{get_current_time()}-Read Cache Error: There is no cache file in the cache directory: {path}.")

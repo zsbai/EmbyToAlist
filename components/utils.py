@@ -176,15 +176,65 @@ async def get_alist_raw_url(file_path, host_url, client: httpx.AsyncClient) -> t
         # return flask.Response(status=500, response=req['message'])
         return (req['message'], 500)
         
-async def reverse_proxy(cache: AsyncGenerator[bytes, None], url: str, client: httpx.AsyncClient) -> httpx.Response:
+# async def generator(cache: AsyncGenerator[bytes, None], response: httpx.Response) -> AsyncGenerator[bytes, None]:
+#     pass
+        
+
+async def reverse_proxy(cache: AsyncGenerator[bytes, None], url: str, response_headers: dict, range: tuple, client: httpx.AsyncClient):
     """
     读取缓存数据和URL，返回合并后的流
 
-    :param url: 请求的URL
+    :param cache: 缓存数据
+    :param url: 源文件的URL
+    :param response_headers: 响应头，包含调整过的range以及content-type
+    :param range: 请求头的Range，包含开始和结束字节
     :param client: HTTPX异步客户端
-    :return: HTTPX响应
+    :return: fastapi.responses.StreamingResponse
     """
-    resp = await client.get(url)
-    pass
-    
-    
+    start_byte, end_byte, local_cache_size = range
+
+    if start_byte >= local_cache_size:
+        # Case 1: Requested range is entirely beyond the cache
+        # Prepare Range header
+        if end_byte is not None:
+            source_range_header = f"bytes={start_byte}-{end_byte - 1}"
+        else:
+            source_range_header = f"bytes={start_byte}-"
+
+        async with client.stream("GET", url, headers={"Range": source_range_header, "Host": url.split('/')[2]}) as response:
+            response.raise_for_status()
+            # Update response headers with source response headers
+            for key in ["Content-Length", "Content-Range", "Content-Type"]:
+                if key in response.headers:
+                    response_headers[key] = response.headers[key]
+
+            return fastapi.responses.StreamingResponse(response.aiter_bytes(), headers=response_headers, status_code=206)
+
+    elif end_byte is not None and end_byte <= local_cache_size:
+        # Case 2: Requested range is entirely within the cache
+        return fastapi.responses.StreamingResponse(cache, headers=response_headers, status_code=206)
+
+    else:
+        # Case 3: Requested range overlaps cache and extends beyond it
+        source_start = local_cache_size
+        source_end = end_byte
+
+        if source_end is not None:
+            source_range_header = f"bytes={source_start}-{source_end - 1}"
+        else:
+            source_range_header = f"bytes={source_start}-"
+
+        async def merged_stream():
+            async for chunk in cache:
+                yield chunk
+            print("Cache exhausted, streaming from source")
+            async with client.stream("GET", url, headers={"Range": source_range_header, "Host": url.split('/')[2]}) as response:
+                response.raise_for_status()
+                # Update response headers with source response headers
+                for key in ["Content-Length", "Content-Range", "Content-Type"]:
+                    if key in response.headers:
+                        response_headers[key] = response.headers[key]
+                async for chunk in response.aiter_bytes():
+                    yield chunk
+
+        return fastapi.responses.StreamingResponse(merged_stream(), headers=response_headers, status_code=206)

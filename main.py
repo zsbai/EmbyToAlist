@@ -136,41 +136,48 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
         end_byte = None
     else:
         start_byte, end_byte = map(int, bytes_range.split('-'))
-    
+        
+    print("Request Range Header: " + range_header)
+
     # 获取缓存15秒的文件大小， 并取整
     cacheFileSize = int(file_info.get('Bitrate', 52428800) / 8 * 15)
     
     # 应该走缓存的情况1：请求文件开头
     if start_byte < cacheFileSize:
         
-        # 判断客户端是否在黑名单中
-        if any(user_agent.lower() in request.headers.get('User-Agent', '').lower() for user_agent in cache_client_blacklist):
-                print("Cache is disabled for this client")
-                return await redirect_to_alist_raw_url(alist_path, host_url, client=app.requests_client)
+        # # 判断客户端是否在黑名单中
+        # if any(user_agent.lower() in request.headers.get('User-Agent', '').lower() for user_agent in cache_client_blacklist):
+        #         print("Cache is disabled for this client")
+        #         return await redirect_to_alist_raw_url(alist_path, host_url, client=app.requests_client)
 
-        # 响应头中的end byte
-        resp_end_byte = cacheFileSize - 1
-        resp_file_size = resp_end_byte + 1 - start_byte
-
+        ## 响应头中的end byte
+        # resp_end_byte = cacheFileSize - 1
+        # resp_file_size = resp_end_byte + 1 - start_byte
         
-        getCacheStatus_exists = get_cache_status(item_id, alist_path, start_byte)
-        if getCacheStatus_exists:
+        # 如果请求末尾在cache范围内
+        cache_end_byte = cacheFileSize if end_byte is None or end_byte > cacheFileSize else end_byte
+        resp_end_byte = file_info['Size'] - 1 if end_byte is None or end_byte > cache_end_byte else cache_end_byte
+        
+        if get_cache_status(item_id, alist_path, start_byte):
             
             resp_headers = {
                 'Content-Type': get_content_type(file_info['Container']),
                 'Accept-Ranges': 'bytes',
                 'Content-Range': f"bytes {start_byte}-{resp_end_byte}/{file_info['Size']}",
-                'Content-Length': f'{resp_file_size}',
+                # 防止fastapi识别到错误的Content-Length而报错
+                # 'Content-Length': f'{file_info["Size"] - start_byte}',
                 'Cache-Control': 'private, no-transform, no-cache',
                 'X-EmbyToAList-Cache': 'Hit',
             }
             
             print("\nCached file exists and is valid")
             # 返回缓存内容和调整后的响应头
-            print("Request Range Header: " + range_header)
-            print("Response Range Header: " + f"bytes {start_byte}-{resp_end_byte}/{file_info['Size']}")
-            print("Response Content-Length: " + f'{resp_file_size}')
-            return fastapi.responses.StreamingResponse(read_cache_file(item_id, alist_path, start_byte, cacheFileSize), headers=resp_headers, status_code=206)
+            
+            raw_url, code = await get_alist_raw_url(alist_path, host_url=host_url, client=app.requests_client)
+
+            
+            # return fastapi.responses.StreamingResponse(read_cache_file(item_id, alist_path, start_byte, cacheFileSize), headers=resp_headers, status_code=206)
+            return await reverse_proxy(cache=read_cache_file(item_id, alist_path, start_byte, cache_end_byte), url=raw_url, response_headers=resp_headers, range=(start_byte, end_byte, cacheFileSize), client=app.requests_client)
         else:
             print("Request Range Header: " + range_header)
             # 后台任务缓存文件
