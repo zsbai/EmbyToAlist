@@ -4,8 +4,17 @@ from components.utils import *
 import httpx
 import aiofiles
 import aiofiles.os
+import asyncio
 from typing import AsyncGenerator, Optional
+from weakref import WeakValueDictionary
 
+cache_locks = WeakValueDictionary()
+
+def get_cache_lock(subdirname, dirname, cache_file_name):
+    key = os.path.join(subdirname, dirname, cache_file_name)
+    if key not in cache_locks:
+        cache_locks[key] = asyncio.Lock()
+    return cache_locks[key]
 
 async def read_file(
     file_path: str, 
@@ -58,14 +67,18 @@ async def write_cache_file(item_id, path, req_header=None, cache_size=52428800, 
     :param item_id: Emby Item ID
     :param path: 文件路径, 用于获取Alist Raw Url
     :param req_header: 请求头，用于请求Alist Raw Url
-    :param size: 缓存文件大小，默认为 50MB
+    :param cache_size: 缓存文件大小，默认为 50MB
     :param start_point: 缓存文件的起始点
     :param file_size: 文件大小
+    :param host_url: 请求中请求头的host
+    ::param client: HTTPX异步客户端
+    
     :return: 缓存是否成功
     """
     subdirname, dirname = get_hash_subdirectory_from_path(path)
     
-    # 如果filesize 不为 None，endPoint 为文件末尾
+    # 计算缓存文件的结束点
+    # 如果filesize 不为 None，endPoint 为文件末尾（缓存尾部元数据）
     if start_point <= cache_size:
         start_point = 0
         end_point = cache_size - 1
@@ -82,75 +95,73 @@ async def write_cache_file(item_id, path, req_header=None, cache_size=52428800, 
         return False
     
     # 根据起始点和缓存大小确定缓存文件路径
-    cache_file_path = os.path.join(cache_path, subdirname, dirname, f'cache_file_{start_point}_{end_point}')
+    cache_file_name = f'cache_file_{start_point}_{end_point}'
+    cache_file_path = os.path.join(cache_path, subdirname, dirname, cache_file_name)
     print(f"\n {get_current_time()} - Start to cache file {start_point}-{end_point}: {item_id}, file path: {cache_file_path}")
     
     os.makedirs(os.path.dirname(cache_file_path), exist_ok=True)
      
-    # 创建一个空文件标签。防止在写入的时候被读取
-    cache_write_tag_path = os.path.join(cache_path, subdirname, dirname, f'cache_writing_tag')
-    if not os.path.exists(cache_write_tag_path):
-        with open(cache_write_tag_path, 'w') as f:
+    cache_write_tag_path = os.path.join(cache_path, subdirname, dirname, f'{cache_file_name}.tag')
+    lock = get_cache_lock(subdirname, dirname, cache_file_name)
+    
+    async with lock:
+        # 创建缓存写入标记文件
+        async with aiofiles.open(cache_write_tag_path, 'w') as f:
             pass
     
-    # 检查是否已有包含当前范围的缓存文件
-    for file in os.listdir(os.path.join(cache_path, subdirname, dirname)):
-        if file.startswith('cache_file_'):
-            file_range_start, file_range_end = map(int, file.split('_')[2:4])
-            
-            if start_point >= file_range_start and end_point <= file_range_end:
-                print(f"{get_current_time()}-WARNING: Cache Range Already Exists. Abort.")
-                return False
-            elif start_point <= file_range_start and end_point >= file_range_end:
-                full_path = os.path.join(cache_path, subdirname, dirname, file)
-                mod_time = os.path.getmtime(full_path)
-                now_time = datetime.now().timestamp()
-                # 如果文件在过去15秒内被修改过，可能仍在缓存过程中
-                # 防止重复缓存由write_cache_file负责
-                if now_time - mod_time < 15:
-                    print(f"{get_current_time()}-Write Cache Error: Cache file for range {start_point}-{end_point} may is still writing.")
-                    return False
-                print(f"{get_current_time()}-WARNING: Existing Cache Range within new range. Deleting old cache.")
-                await aiofiles.os.remove(os.path.join(cache_path, subdirname, dirname, file))
-    
-    # 创建一个空文件 防止后续被重复缓存
-    with open(cache_file_path, 'w') as f:
-        pass
-    
-    # 请求Alist Raw Url，好像请求头没太所谓
-    if req_header is None:
-        req_header = {}
-    else:
-        req_header = dict(req_header) # Copy the headers
-        
-    req_header['host'] = raw_url.split('/')[2]
-      
-    # Modify the range to startPoint-first50M
-    req_header['range'] = f"bytes={start_point}-{end_point}"
-
-    # 如果请求失败，删除空缓存文件
-    try:
-        resp = await client.get(raw_url, headers=req_header)
-    except Exception as e:
-        print(f"{get_current_time()}-Write Cache Error {start_point}-{end_point}: {e}")
-        await aiofiles.os.remove(cache_file_path)
-        return False
-    
-    if resp.status_code == 206: 
-        # print(f"Start to write cache file: {item_id}")
-        async with aiofiles.open(cache_file_path, 'wb') as f:
-            async for chunk in resp.aiter_bytes(chunk_size=1024):
-                await f.write(chunk)
+        # 检查是否已有包含当前范围的缓存文件
+        for file in os.listdir(os.path.join(cache_path, subdirname, dirname)):
+            if file.startswith('cache_file_') and file.endswith('.tag') is False:
+                file_range_start, file_range_end = map(int, file.split('_')[2:4])
                 
-        print(f"{get_current_time()}-Write Cache file {start_point}-{end_point}: {item_id} has been written, file path: {cache_file_path}")
+                if start_point >= file_range_start and end_point <= file_range_end:
+                    print(f"{get_current_time()}-WARNING: Cache Range Already Exists. Abort.")
+                    await aiofiles.os.remove(cache_write_tag_path)
+                    return False
+                elif start_point <= file_range_start and end_point >= file_range_end:
+                    print(f"{get_current_time()}-WARNING: Existing Cache Range within new range. Deleting old cache.")
+                    await aiofiles.os.remove(os.path.join(cache_path, subdirname, dirname, file))
         
-        if os.path.exists(cache_write_tag_path):
-            os.remove(cache_write_tag_path)
-        return True
-    else:
-        print(f"{get_current_time()}-Write Cache Error {start_point}-{end_point}: Upstream return code: {resp.status_code}")
-        await aiofiles.os.remove(cache_file_path)
-        return False
+        # 请求Alist Raw Url，好像请求头没太所谓
+        if req_header is None:
+            req_header = {}
+        else:
+            req_header = dict(req_header) # Copy the headers
+            
+        req_header['host'] = raw_url.split('/')[2]
+        # Modify the range to startPoint-first50M
+        req_header['range'] = f"bytes={start_point}-{end_point}"
+
+        # 如果请求失败，删除空缓存文件
+        try:
+            resp = await client.get(raw_url, headers=req_header)
+        except Exception as e:
+            print(f"{get_current_time()}-Write Cache Error {start_point}-{end_point}: {e}")
+            await aiofiles.os.remove(cache_file_path)
+            await aiofiles.os.remove(cache_write_tag_path)
+            return False
+        
+        if resp.status_code == 206: 
+            try:
+                # print(f"Start to write cache file: {item_id}")
+                async with aiofiles.open(cache_file_path, 'wb') as f:
+                    async for chunk in resp.aiter_bytes(chunk_size=1024):
+                        await f.write(chunk)
+                        
+                print(f"{get_current_time()}-Write Cache file {start_point}-{end_point}: {item_id} has been written, file path: {cache_file_path}")
+                
+                await aiofiles.os.remove(cache_write_tag_path)
+                return True
+            except Exception as e:
+                print(f"{get_current_time()}-Write Cache Error {start_point}-{end_point}: {e}")
+                await aiofiles.os.remove(cache_file_path)
+                await aiofiles.os.remove(cache_write_tag_path)
+                return False
+        else:
+            print(f"{get_current_time()}-Write Cache Error {start_point}-{end_point}: Upstream return code: {resp.status_code}")
+            await aiofiles.os.remove(cache_file_path)
+            await aiofiles.os.remove(cache_write_tag_path)
+            return False
     
 def read_cache_file(item_id, path, start_point=0, end_point=None):
     """
@@ -201,17 +212,20 @@ def get_cache_status(item_id, path, start_point=0) -> bool:
     :return: 缓存文件是否存在
     """
     subdirname, dirname = get_hash_subdirectory_from_path(path)
+    cache_dir = os.path.join(cache_path, subdirname, dirname)
     
-    if os.path.exists(os.path.join(cache_path, subdirname, dirname)) is False:
+    if os.path.exists(cache_dir) is False:
         print(f"{get_current_time()}-Get Cache Error: Cache directory does not exist: {os.path.join(cache_path, subdirname, dirname)}")
         return False
     
-    if os.path.exists(os.path.join(cache_path, subdirname, dirname, f'cache_writing_tag')):
-        print(f"{get_current_time()}-Get Cache Error: Some Cache files are still writing.")
-        return False
+    # 检查是否有任何缓存文件正在写入
+    for file in os.listdir(cache_dir):
+        if file.endswith('.tag'):
+            print(f"{get_current_time()}-Get Cache Error: Cache file is being written: {os.path.join(cache_path, subdirname, dirname, file)}")
+            return False
     
     # 查找与 startPoint 匹配的缓存文件，endPoint 为文件名的一部分
-    for file in os.listdir(os.path.join(cache_path, subdirname, dirname)):
+    for file in os.listdir(cache_dir):
         if file.startswith('cache_file_'):
             range_start, range_end = map(int, file.split('_')[2:4])
             if range_start <= start_point <= range_end:
