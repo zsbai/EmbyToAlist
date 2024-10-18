@@ -138,6 +138,10 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
         start_byte, end_byte = map(int, bytes_range.split('-'))
         
     print("Request Range Header: " + range_header)
+    
+    if start_byte >= file_info['Size']:
+        print("\nWarning: Requested Range is out of file size.")
+        return fastapi.responses.Response(status_code=416, headers={'Content-Range': f'bytes */{file_info["Size"]}'})
 
     # 获取缓存15秒的文件大小， 并取整
     cacheFileSize = int(file_info.get('Bitrate', 52428800) / 8 * 15)
