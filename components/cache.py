@@ -11,9 +11,11 @@ from weakref import WeakValueDictionary
 cache_locks = WeakValueDictionary()
 
 def get_cache_lock(subdirname, dirname, cache_file_name):
-    key = os.path.join(subdirname, dirname, cache_file_name)
+    key = os.path.join(subdirname, dirname, cache_file_name)  
     if key not in cache_locks:
-        cache_locks[key] = asyncio.Lock()
+        # 防止被weakref立即回收
+        lock = asyncio.Lock()
+        cache_locks[key] = lock
     return cache_locks[key]
 
 async def read_file(
