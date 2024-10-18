@@ -144,7 +144,7 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
         return fastapi.responses.Response(status_code=416, headers={'Content-Range': f'bytes */{file_info["Size"]}'})
 
     # 获取缓存15秒的文件大小， 并取整
-    cacheFileSize = int(file_info.get('Bitrate', 52428800) / 8 * 15)
+    cacheFileSize = int(file_info.get('Bitrate', 27962026) / 8 * 15)
     
     # 应该走缓存的情况1：请求文件开头
     if start_byte < cacheFileSize:
@@ -214,27 +214,6 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
 
             # 重定向到原始URL
             return await redirect_to_alist_raw_url(alist_path, host_url, client=app.requests_client)
-    # 应该走缓存的情况3：缓存文件存在
-    elif get_cache_status(item_id, path=alist_path, start_point=start_byte):
-        resp_end_byte = 20 * 1024 * 1024 + start_byte - 1
-        resp_file_size = 20 * 1024 * 1024
-
-        resp_headers = {
-            'Content-Type': get_content_type(file_info['Container']),
-            'Accept-Ranges': 'bytes',
-            'Content-Range': f"bytes {start_byte}-{resp_end_byte}/{file_info['Size']}",
-            'Content-Length': f'{resp_file_size}',
-            'Cache-Control': 'private, no-transform, no-cache',
-            'X-EmbyToAList-Cache': 'Hit',
-        }
-        
-        print("\nCached file exists and is valid")
-        # 返回缓存内容和调整后的响应头
-        print("Request Range Header: " + range_header)
-        print("Response Range Header: " + f"bytes {start_byte}-{resp_end_byte}/{file_info['Size']}")
-        print("Response Content-Length: " + f'{resp_file_size}')
-        return fastapi.responses.StreamingResponse(read_cache_file(item_id=item_id, path=alist_path, start_point=start_byte, end_point=end_byte), headers=resp_headers, status_code=206)
-    
     else:
         print("Request Range is not in cache range, redirect to Alist Raw Url")
         print("Request Range Header: " + range_header)

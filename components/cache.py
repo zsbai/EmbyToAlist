@@ -10,8 +10,9 @@ from weakref import WeakValueDictionary
 
 cache_locks = WeakValueDictionary()
 
-def get_cache_lock(subdirname, dirname, cache_file_name):
-    key = os.path.join(subdirname, dirname, cache_file_name)  
+def get_cache_lock(subdirname, dirname):
+    # 为每个子目录创建一个锁, 防止不同文件名称的缓存同时写入，导致重复范围的文件
+    key = os.path.join(subdirname, dirname)  
     if key not in cache_locks:
         # 防止被weakref立即回收
         lock = asyncio.Lock()
@@ -106,7 +107,7 @@ async def write_cache_file(item_id, path, req_header=None, cache_size=52428800, 
     os.makedirs(os.path.dirname(cache_file_path), exist_ok=True)
      
     cache_write_tag_path = os.path.join(cache_path, subdirname, dirname, f'{cache_file_name}.tag')
-    lock = get_cache_lock(subdirname, dirname, cache_file_name)
+    lock = get_cache_lock(subdirname, dirname)
     
     async with lock:
         # 创建缓存写入标记文件
@@ -184,7 +185,7 @@ def read_cache_file(item_id, path, start_point=0, end_point=None):
     # 查找与 startPoint 匹配的缓存文件，endPoint 为文件名的一部分
     for file in os.listdir(file_dir):
             
-        if file.startswith('cache_file_'):
+        if file.startswith('cache_file_') and file.endswith('.tag') is False:
             range_start, range_end = map(int, file.split('_')[2:4])
             if range_start <= start_point <= range_end:
                 # 调整 end_point 的值

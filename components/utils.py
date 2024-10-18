@@ -220,7 +220,7 @@ async def reverse_proxy(cache: AsyncGenerator[bytes, None], url: str, response_h
         source_end = end_byte
 
         if source_end is not None:
-            source_range_header = f"bytes={source_start}-{source_end - 1}"
+            source_range_header = f"bytes={source_start}-{source_end}"
         else:
             source_range_header = f"bytes={source_start}-"
 
@@ -230,6 +230,8 @@ async def reverse_proxy(cache: AsyncGenerator[bytes, None], url: str, response_h
             print("Cache exhausted, streaming from source")
             async with client.stream("GET", url, headers={"Range": source_range_header, "Host": url.split('/')[2]}) as response:
                 response.raise_for_status()
+                if response.status_code != 206:
+                    raise ValueError(f"Expected 206 response, got {response.status_code}")
                 # Update response headers with source response headers
                 for key in ["Content-Length", "Content-Range", "Content-Type"]:
                     if key in response.headers:
