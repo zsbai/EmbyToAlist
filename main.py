@@ -167,11 +167,8 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
             print("\nCached file exists and is valid")
             # 返回缓存内容和调整后的响应头
             
-            raw_url, code = await get_alist_raw_url(alist_path, host_url=host_url, client=app.requests_client)
-
-            
             # return fastapi.responses.StreamingResponse(read_cache_file(item_id, alist_path, start_byte, cacheFileSize), headers=resp_headers, status_code=206)
-            return await reverse_proxy(cache=read_cache_file(item_id, alist_path, start_byte, cache_end_byte), url=raw_url, response_headers=resp_headers, range=(start_byte, end_byte, cacheFileSize), client=app.requests_client)
+            return await reverse_proxy(cache=read_cache_file(item_id, alist_path, start_byte, cache_end_byte), alist_params=(alist_path, host_url), response_headers=resp_headers, range=(start_byte, end_byte, cacheFileSize), client=app.requests_client)
         else:
             print("Request Range Header: " + range_header)
             # 后台任务缓存文件
@@ -225,11 +222,8 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
             'X-EmbyToAList-Cache': 'Miss',
         }
         
-        raw_url, code = await get_alist_raw_url(alist_path, host_url=host_url, client=app.requests_client)
-
-        
         # return await redirect_to_alist_raw_url(alist_path, host_url, client=app.requests_client)
-        return await reverse_proxy(cache=None, url=raw_url, response_headers=resp_headers, range=(start_byte, end_byte, cacheFileSize), client=app.requests_client)
+        return await reverse_proxy(cache=None, alist_params=(alist_path, host_url), response_headers=resp_headers, range=(start_byte, end_byte, cacheFileSize), client=app.requests_client)
 
 
 @app.post('/emby/webhook')

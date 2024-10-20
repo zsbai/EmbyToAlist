@@ -180,7 +180,7 @@ async def get_alist_raw_url(file_path, host_url, client: httpx.AsyncClient) -> t
 #     pass
         
 
-async def reverse_proxy(cache: AsyncGenerator[bytes, None], url: str, response_headers: dict, range: tuple, client: httpx.AsyncClient):
+async def reverse_proxy(cache: AsyncGenerator[bytes, None], alist_params: tuple, response_headers: dict, range: tuple, client: httpx.AsyncClient):
     """
     读取缓存数据和URL，返回合并后的流
 
@@ -202,6 +202,8 @@ async def reverse_proxy(cache: AsyncGenerator[bytes, None], url: str, response_h
             source_range_header = f"bytes={start_byte}-"
             
         async def original_stream():
+            url, code = await get_alist_raw_url(alist_params[0], host_url=alist_params[1], client=client)
+
             async with client.stream("GET", url, headers={"Range": source_range_header, "Host": url.split('/')[2]}) as response:
                 response.raise_for_status()
                 # Update response headers with source response headers
@@ -231,6 +233,8 @@ async def reverse_proxy(cache: AsyncGenerator[bytes, None], url: str, response_h
             async for chunk in cache:
                 yield chunk
             print("Cache exhausted, streaming from source")
+            url, code = await get_alist_raw_url(alist_params[0], host_url=alist_params[1], client=client)
+
             async with client.stream("GET", url, headers={"Range": source_range_header, "Host": url.split('/')[2]}) as response:
                 response.raise_for_status()
                 if response.status_code != 206:
