@@ -200,15 +200,18 @@ async def reverse_proxy(cache: AsyncGenerator[bytes, None], url: str, response_h
             source_range_header = f"bytes={start_byte}-{end_byte - 1}"
         else:
             source_range_header = f"bytes={start_byte}-"
+            
+        async def original_stream():
+            async with client.stream("GET", url, headers={"Range": source_range_header, "Host": url.split('/')[2]}) as response:
+                response.raise_for_status()
+                # Update response headers with source response headers
+                for key in ["Content-Length", "Content-Range"]:
+                    if key in response.headers:
+                        response_headers[key] = response.headers[key]
+                async for chunk in response.aiter_bytes():
+                    yield chunk
 
-        async with client.stream("GET", url, headers={"Range": source_range_header, "Host": url.split('/')[2]}) as response:
-            response.raise_for_status()
-            # Update response headers with source response headers
-            for key in ["Content-Length", "Content-Range"]:
-                if key in response.headers:
-                    response_headers[key] = response.headers[key]
-
-            return fastapi.responses.StreamingResponse(response.aiter_bytes(), headers=response_headers, status_code=206)
+        return fastapi.responses.StreamingResponse(original_stream(), headers=response_headers, status_code=206)
 
     elif end_byte is not None and end_byte <= local_cache_size:
         # Case 2: Requested range is entirely within the cache
