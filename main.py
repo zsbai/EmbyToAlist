@@ -217,7 +217,21 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
     else:
         print("Request Range is not in cache range, redirect to Alist Raw Url")
         print("Request Range Header: " + range_header)
-        return await redirect_to_alist_raw_url(alist_path, host_url, client=app.requests_client)
+        
+        resp_headers = {
+            'Content-Type': get_content_type(file_info['Container']),
+            'Accept-Ranges': 'bytes',
+            # 'Content-Range': f'bytes {start_byte}-{file_info["Size"] - 1}/{file_info["Size"]}',
+            # 'Content-Length': f'{file_info["Size"] - start_byte}',
+            'Cache-Control': 'private, no-transform, no-cache',
+            'X-EmbyToAList-Cache': 'Miss',
+        }
+        
+        raw_url, code = await get_alist_raw_url(alist_path, host_url=host_url, client=app.requests_client)
+
+        
+        # return await redirect_to_alist_raw_url(alist_path, host_url, client=app.requests_client)
+        return await reverse_proxy(cache=None, url=raw_url, response_headers=resp_headers, range=(start_byte, end_byte, cacheFileSize), client=app.requests_client)
 
 
 @app.post('/emby/webhook')

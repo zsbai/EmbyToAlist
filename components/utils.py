@@ -204,7 +204,7 @@ async def reverse_proxy(cache: AsyncGenerator[bytes, None], url: str, response_h
         async with client.stream("GET", url, headers={"Range": source_range_header, "Host": url.split('/')[2]}) as response:
             response.raise_for_status()
             # Update response headers with source response headers
-            for key in ["Content-Length", "Content-Range", "Content-Type"]:
+            for key in ["Content-Length", "Content-Range"]:
                 if key in response.headers:
                     response_headers[key] = response.headers[key]
 
@@ -233,7 +233,7 @@ async def reverse_proxy(cache: AsyncGenerator[bytes, None], url: str, response_h
                 if response.status_code != 206:
                     raise ValueError(f"Expected 206 response, got {response.status_code}")
                 # Update response headers with source response headers
-                for key in ["Content-Length", "Content-Range", "Content-Type"]:
+                for key in ["Content-Length", "Content-Range"]:
                     if key in response.headers:
                         response_headers[key] = response.headers[key]
                 async for chunk in response.aiter_bytes():
