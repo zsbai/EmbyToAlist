@@ -96,7 +96,7 @@ async def write_cache_file(item_id, path, req_header=None, cache_size=52428800, 
         return
     
     # 获取Alist Raw Url
-    raw_url, code = await get_alist_raw_url(path, host_url, client)
+    code, raw_url = await get_alist_raw_url(path, host_url, client)
     if code != 200:
         print(f"{get_current_time()}-Cache Error {start_point}-{end_point}, Alist Return: code: {code} and url: {raw_url}")
         return False

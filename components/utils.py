@@ -7,7 +7,7 @@ import fastapi
 import httpx
 
 from config import *
-from typing import AsyncGenerator, Optional
+from typing import AsyncGenerator, Tuple
 
 
 
@@ -119,7 +119,7 @@ def extract_api_key(request: fastapi.Request):
                 api_key = match_token.group(1)
     return api_key or emby_key
 
-async def get_alist_raw_url(file_path, host_url, client: httpx.AsyncClient) -> tuple:
+async def get_alist_raw_url(file_path, host_url, client: httpx.AsyncClient) -> Tuple[str, int]:
     """根据文件路径获取Alist Raw Url"""
     
     alist_api_url = f"{alist_server}/api/fs/get"
@@ -168,77 +168,39 @@ async def get_alist_raw_url(file_path, host_url, client: httpx.AsyncClient) -> t
                     # 替换原始URL为反向代理URL
                     raw_url = re.sub(r'https?:\/\/[^\/]+\/', url, raw_url)
         
-        return (raw_url, 200)
+        return 200, raw_url
                
     elif code == 403:
         print("403 Forbidden, Please check your Alist Key")
-        # return flask.Response(status=403, response="403 Forbidden, Please check your Alist Key")
-        return ('403 Forbidden, Please check your Alist Key', 403)
+        return 403, '403 Forbidden, Please check your Alist Key'
     else:
         print(f"Error: {req['message']}")
-        # return flask.Response(status=500, response=req['message'])
-        return (req['message'], 500)
-        
-# async def generator(cache: AsyncGenerator[bytes, None], response: httpx.Response) -> AsyncGenerator[bytes, None]:
-#     pass
-        
+        return 500, req['message']        
 
-async def reverse_proxy(cache: AsyncGenerator[bytes, None], alist_params: tuple, response_headers: dict, range: tuple, client: httpx.AsyncClient):
+async def reverse_proxy(cache: AsyncGenerator[bytes, None],
+                        url: str,
+                        request_header: dict,
+                        response_headers: dict,
+                        client: httpx.AsyncClient
+                        ):
     """
     读取缓存数据和URL，返回合并后的流
 
     :param cache: 缓存数据
     :param url: 源文件的URL
-    :param response_headers: 响应头，包含调整过的range以及content-type
-    :param range: 请求头的Range，包含开始和结束字节
+    :param request_header: 请求头，用于请求网盘，包含host和range
+    :param response_headers: 返回的响应头，包含调整过的range以及content-type
     :param client: HTTPX异步客户端
+    
     :return: fastapi.responses.StreamingResponse
     """
-    start_byte, end_byte, local_cache_size = range
-
-    if start_byte >= local_cache_size:
-        # Case 1: Requested range is entirely beyond the cache
-        # Prepare Range header
-        if end_byte is not None:
-            source_range_header = f"bytes={start_byte}-{end_byte - 1}"
-        else:
-            source_range_header = f"bytes={start_byte}-"
-            
-        async def original_stream():
-            url, code = await get_alist_raw_url(alist_params[0], host_url=alist_params[1], client=client)
-
-            async with client.stream("GET", url, headers={"Range": source_range_header, "Host": url.split('/')[2]}) as response:
-                response.raise_for_status()
-                # Update response headers with source response headers
-                for key in ["Content-Length", "Content-Range"]:
-                    if key in response.headers:
-                        response_headers[key] = response.headers[key]
-                async for chunk in response.aiter_bytes():
-                    yield chunk
-
-        return fastapi.responses.StreamingResponse(original_stream(), headers=response_headers, status_code=206)
-
-    elif end_byte is not None and end_byte <= local_cache_size:
-        # Case 2: Requested range is entirely within the cache
-        return fastapi.responses.StreamingResponse(cache, headers=response_headers, status_code=206)
-
-    else:
-        # Case 3: Requested range overlaps cache and extends beyond it
-        source_start = local_cache_size
-        source_end = end_byte
-
-        if source_end is not None:
-            source_range_header = f"bytes={source_start}-{source_end}"
-        else:
-            source_range_header = f"bytes={source_start}-"
-
+    try:
         async def merged_stream():
-            async for chunk in cache:
-                yield chunk
-            print("Cache exhausted, streaming from source")
-            url, code = await get_alist_raw_url(alist_params[0], host_url=alist_params[1], client=client)
-
-            async with client.stream("GET", url, headers={"Range": source_range_header, "Host": url.split('/')[2]}) as response:
+            if cache is not None:
+                async for chunk in cache:
+                    yield chunk
+                print("Cache exhausted, streaming from source")
+            async with client.stream("GET", url, headers=request_header) as response:
                 response.raise_for_status()
                 if response.status_code != 206:
                     raise ValueError(f"Expected 206 response, got {response.status_code}")
@@ -250,3 +212,6 @@ async def reverse_proxy(cache: AsyncGenerator[bytes, None], alist_params: tuple,
                     yield chunk
 
         return fastapi.responses.StreamingResponse(merged_stream(), headers=response_headers, status_code=206)
+    except Exception as e:
+        print(f"Error: reverse_proxy failed, {e}")
+        raise fastapi.HTTPException(status_code=500, detail="Reverse Proxy Failed")

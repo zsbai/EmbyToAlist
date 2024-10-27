@@ -8,7 +8,7 @@ import uvicorn
 from config import *
 from components.utils import *
 from components.cache import *
-
+from typing import Tuple
 
 # 使用上下文管理器，创建异步请求客户端
 @asynccontextmanager
@@ -57,20 +57,20 @@ async def get_file_info(item_id, MediaSourceId, apiKey, client: httpx.AsyncClien
 
 # return Alist Raw Url
 @get_time
-async def redirect_to_alist_raw_url(file_path, host_url, client=httpx.AsyncClient) -> fastapi.Response:
-    """创建Alist Raw Url并重定向"""
+async def get_or_cache_alist_raw_url(file_path, host_url, client=httpx.AsyncClient) -> Tuple[int, str]:
+    """创建或获取Alist Raw Url缓存，缓存时间为5分钟"""
     cache_key = file_path + host_url
     if cache_key in URL_CACHE.keys():
         now_time = datetime.now().timestamp()
         if now_time - URL_CACHE[cache_key]['time'] < 300:
             print("\nAlist Raw URL Cache exists and is valid (less than 5 minutes)")
             print("Redirected Url: " + URL_CACHE[cache_key]['url'])
-            return fastapi.responses.RedirectResponse(url=URL_CACHE[cache_key]['url'], status_code=302)
+            return 200, URL_CACHE[cache_key]['url']
         else:
             print("\nAlist Raw URL Cache is expired, re-fetching...")
             del URL_CACHE[cache_key]
     
-    raw_url, code = await get_alist_raw_url(file_path, host_url=host_url, client=client)
+    code, raw_url = await get_alist_raw_url(file_path, host_url=host_url, client=client)
     
     if code == 200:
         URL_CACHE[cache_key] = {
@@ -78,12 +78,107 @@ async def redirect_to_alist_raw_url(file_path, host_url, client=httpx.AsyncClien
             'time': datetime.now().timestamp()
             }
         print("Redirected Url: " + raw_url)
-        return fastapi.responses.RedirectResponse(url=raw_url, status_code=302)
+        return code, raw_url
     else:
         print(f"Error: failed to get Alist Raw Url, {code}")
         print(f"{raw_url}")
-        return fastapi.HTTPException(status=code, detail=raw_url)
+        return code, raw_url
+
+# 可以在第一个请求到达时就异步创建alist缓存
+# 重定向：
+# 1. 未启用缓存
+# 2. 请求头不包含Range
+# 3. 中间恢复播放
+# 反代：
+# 1. 无缓存文件（should，目前只是重新代理。todo：缓存重利用）
+# 2. 缓存拼接
+# 只需返回缓存（不需要alist直链）：
+# 1. 请求范围在缓存范围内
+# 2. 请求范围在文件末尾2MB内
+async def request_handler(status_code: int,
+                          cache: AsyncGenerator[bytes, None]=None,
+                          file_path: str=None,
+                          range_header: Tuple[int, int, int]=None,
+                          host_url: str=None, 
+                          resp_header: dict=None,
+                          client: httpx.AsyncClient=None
+                          ) -> fastapi.Response:
+    """决定反代还是重定向，创建alist缓存
     
+    :param status_code: 期望返回的状态码，302或206
+    :param cache: 内部缓存数据
+    :param file_path: alist文件路径
+    :param range: (start_byte, end_byte, local_cache_size) 请求的起始和结束字节，以及缓存大小
+    :param host_url: 请求头的host，用于alist直链
+    :param resp_header: 需要返回的响应头
+    :param client: httpx异步请求客户端
+    
+    :return fastapi.Response: 返回重定向或反代的响应
+    """
+    # 如果满足alist直链条件，提前通过异步缓存alist直链
+    if host_url is not None and file_path is not None:
+        alist_raw_url = asyncio.create_task(get_or_cache_alist_raw_url(file_path=file_path, host_url=host_url, client=client))
+    
+    if status_code == 302:
+        code, raw_url = await alist_raw_url
+        if code != 200:
+            raise fastapi.HTTPException(status_code=500, detail=f"Get Alist Raw Url Error: {raw_url};\nCode: {code}")
+        return fastapi.responses.RedirectResponse(url=raw_url, status_code=302)
+    
+    if status_code == 206:
+        start_byte, end_byte, local_cache_size = range_header
+
+        if start_byte >= local_cache_size:
+            # Case 1: Requested range is entirely beyond the cache
+            # Prepare Range header
+            if end_byte is not None:
+                source_range_header = f"bytes={start_byte}-{end_byte - 1}"
+            else:
+                source_range_header = f"bytes={start_byte}-"
+            
+            code, raw_url = await alist_raw_url
+            if code != 200: raise fastapi.HTTPException(status_code=500, detail=f"Get Alist Raw Url Error: {raw_url};\nCode: {code}")   
+            
+            return await reverse_proxy(cache=None, 
+                                       url=raw_url, 
+                                       request_header={
+                                           "Range": source_range_header, 
+                                           "Host": raw_url.split('/')[2]
+                                           },
+                                       response_headers=resp_header,
+                                       client=client)
+        elif end_byte is not None and end_byte <= local_cache_size:
+            # Case 2: Requested range is entirely within the cache
+            return fastapi.responses.StreamingResponse(cache, headers=resp_header, status_code=206)
+        else:
+            # Case 3: Requested range overlaps cache and extends beyond it
+            source_start = local_cache_size
+            source_end = end_byte
+
+            if source_end is not None:
+                source_range_header = f"bytes={source_start}-{source_end}"
+            else:
+                source_range_header = f"bytes={source_start}-"
+            
+            code, raw_url = await alist_raw_url
+            if code != 200: 
+                raw_url = None
+                raise fastapi.HTTPException(status_code=500, detail=f"Get Alist Raw Url Error: {raw_url};\nCode: {code}")
+            
+            
+            return await reverse_proxy(cache=cache, 
+                                       url=raw_url, 
+                                       request_header={
+                                           "Range": source_range_header, 
+                                           "Host": raw_url.split('/')[2]
+                                           },
+                                       response_headers=resp_header,
+                                       client=client)
+                
+    if status_code == 416:
+        return fastapi.responses.Response(status_code=416, headers=resp_header)
+    
+    raise fastapi.HTTPException(status_code=500, detail=f"Unexpected argument: {status_code}")
 
 # for infuse
 @app.get('/Videos/{item_id}/{filename}')
@@ -98,7 +193,7 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
     media_source_id = request.query_params.get('MediaSourceId') if 'MediaSourceId' in request.query_params else request.query_params.get('mediaSourceId')
 
     if not media_source_id:
-        return fastapi.HTTPException(status_code=400, detail="MediaSourceId is required")
+        raise fastapi.HTTPException(status_code=400, detail="MediaSourceId is required")
 
     file_info = await get_file_info(item_id, media_source_id, api_key, client=app.requests_client)
     # host_url example: https://emby.example.com:8096/
@@ -106,7 +201,7 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
     
     if file_info['Status'] == "Error":
         print(file_info['Message'])
-        return fastapi.HTTPException(status_code=500, detail=file_info['Message'])
+        raise fastapi.HTTPException(status_code=500, detail=file_info['Message'])
     
     
     print(f"\n{get_current_time()} - Requested Item ID: {item_id}")
@@ -123,13 +218,13 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
     
     # 如果没有启用缓存，直接返回Alist Raw Url
     if not enable_cache:
-        return await redirect_to_alist_raw_url(alist_path, host_url, client=app.requests_client)
+        return await request_handler(status_code=302, file_path=alist_path, host_url=host_url, client=app.requests_client)
 
     range_header = request.headers.get('Range', '')
     if not range_header.startswith('bytes='):
         print("\nWarning: Range header is not correctly formatted.")
         print(request.headers)
-        return await redirect_to_alist_raw_url(alist_path, host_url, client=app.requests_client)
+        return await request_handler(status_code=302, file_path=alist_path, host_url=host_url, client=app.requests_client)
     
     # 解析Range头，获取请求的起始字节
     bytes_range = range_header.split('=')[1]
@@ -144,7 +239,7 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
     
     if start_byte >= file_info['Size']:
         print("\nWarning: Requested Range is out of file size.")
-        return fastapi.responses.Response(status_code=416, headers={'Content-Range': f'bytes */{file_info["Size"]}'})
+        return request_handler(status_code=416, resp_header={'Content-Range': f'bytes */{file_info["Size"]}'})
 
     # 获取缓存15秒的文件大小， 并取整
     cacheFileSize = int(file_info.get('Bitrate', 27962026) / 8 * 15)
@@ -170,8 +265,8 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
             print("\nCached file exists and is valid")
             # 返回缓存内容和调整后的响应头
             
-            # return fastapi.responses.StreamingResponse(read_cache_file(item_id, alist_path, start_byte, cacheFileSize), headers=resp_headers, status_code=206)
-            return await reverse_proxy(cache=read_cache_file(item_id, alist_path, start_byte, cache_end_byte), alist_params=(alist_path, host_url), response_headers=resp_headers, range=(start_byte, end_byte, cacheFileSize), client=app.requests_client)
+            # return await reverse_proxy(cache=read_cache_file(item_id, alist_path, start_byte, cache_end_byte), alist_params=(alist_path, host_url), response_headers=resp_headers, range=(start_byte, end_byte, cacheFileSize), client=app.requests_client)
+            return await request_handler(status_code=206, cache=read_cache_file(item_id, alist_path, start_byte, cache_end_byte), file_path=alist_path, range_header=(start_byte, end_byte, cacheFileSize), host_url=host_url, resp_header=resp_headers, client=app.requests_client)
         else:
             print("Request Range Header: " + range_header)
             # 后台任务缓存文件
@@ -179,7 +274,7 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
             print(f"{get_current_time()}: Started background task to write cache file.")
 
             # 重定向到原始URL
-            return await redirect_to_alist_raw_url(alist_path, host_url, client=app.requests_client)
+            return await request_handler(status_code=302, file_path=alist_path, host_url=host_url, client=app.requests_client)
      
     # 应该走缓存的情况2：请求文件末尾
     elif file_info['Size'] - start_byte < 2 * 1024 * 1024:
@@ -213,7 +308,7 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
             print(f"{get_current_time()}: Started background task to write cache file.")
 
             # 重定向到原始URL
-            return await redirect_to_alist_raw_url(alist_path, host_url, client=app.requests_client)
+            return await request_handler(status_code=302, file_path=alist_path, host_url=host_url, client=app.requests_client)
     else:
         
         resp_headers = {
@@ -226,7 +321,8 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
         }
         
         # return await redirect_to_alist_raw_url(alist_path, host_url, client=app.requests_client)
-        return await reverse_proxy(cache=None, alist_params=(alist_path, host_url), response_headers=resp_headers, range=(start_byte, end_byte, cacheFileSize), client=app.requests_client)
+        # return await reverse_proxy(cache=None, alist_params=(alist_path, host_url), response_headers=resp_headers, range=(start_byte, end_byte, cacheFileSize), client=app.requests_client)
+        return await request_handler(status_code=206, file_path=alist_path, range_header=(start_byte, end_byte, cacheFileSize), host_url=host_url, resp_header=resp_headers, client=app.requests_client)
 
 
 @app.post('/emby/webhook')
