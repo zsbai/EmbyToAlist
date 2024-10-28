@@ -144,12 +144,9 @@ async def request_handler(status_code: int,
                 source_range_header = f"bytes={start_byte}-{end_byte - 1}"
             else:
                 source_range_header = f"bytes={start_byte}-"
-            
-            code, raw_url = await alist_raw_url
-            if code != 200: raise fastapi.HTTPException(status_code=500, detail=f"Get Alist Raw Url Error: {raw_url};\nCode: {code}")   
-            
+
             return await reverse_proxy(cache=None, 
-                                       url=raw_url, 
+                                       url_task=alist_raw_url, 
                                        request_header={
                                            "Range": source_range_header, 
                                            "Host": raw_url.split('/')[2]
@@ -169,14 +166,8 @@ async def request_handler(status_code: int,
             else:
                 source_range_header = f"bytes={source_start}-"
             
-            code, raw_url = await alist_raw_url
-            if code != 200: 
-                raw_url = None
-                raise fastapi.HTTPException(status_code=500, detail=f"Get Alist Raw Url Error: {raw_url};\nCode: {code}")
-            
-            
             return await reverse_proxy(cache=cache, 
-                                       url=raw_url, 
+                                       url_task=alist_raw_url, 
                                        request_header={
                                            "Range": source_range_header, 
                                            "Host": raw_url.split('/')[2]
@@ -283,7 +274,6 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
             logger.info("Cached file exists and is valid")
             # 返回缓存内容和调整后的响应头
             
-            # return await reverse_proxy(cache=read_cache_file(item_id, alist_path, start_byte, cache_end_byte), alist_params=(alist_path, host_url), response_headers=resp_headers, range=(start_byte, end_byte, cacheFileSize), client=app.requests_client)
             return await request_handler(status_code=206, cache=read_cache_file(item_id, alist_path, start_byte, cache_end_byte), file_path=alist_path, range_header=(start_byte, end_byte, cacheFileSize), host_url=host_url, resp_header=resp_headers, client=app.requests_client)
         else:
             # 后台任务缓存文件

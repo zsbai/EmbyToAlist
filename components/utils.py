@@ -182,7 +182,7 @@ async def get_alist_raw_url(file_path, host_url, client: httpx.AsyncClient) -> T
         return 500, req['message']        
 
 async def reverse_proxy(cache: AsyncGenerator[bytes, None],
-                        url: str,
+                        url_task: str,
                         request_header: dict,
                         response_headers: dict,
                         client: httpx.AsyncClient
@@ -203,8 +203,12 @@ async def reverse_proxy(cache: AsyncGenerator[bytes, None],
             if cache is not None:
                 async for chunk in cache:
                     yield chunk
-                print("Cache exhausted, streaming from source")
-            async with client.stream("GET", url, headers=request_header) as response:
+                # print("Cache exhausted, streaming from source")
+                logger.info("Cache exhausted, streaming from source")
+            code, raw_url = await url_task
+            if code != 200:
+                raise ValueError(f"Error: get_alist_raw_url failed, {raw_url}")
+            async with client.stream("GET", url_task, headers=request_header) as response:
                 response.raise_for_status()
                 if response.status_code != 206:
                     raise ValueError(f"Expected 206 response, got {response.status_code}")
