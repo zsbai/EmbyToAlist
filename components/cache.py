@@ -5,11 +5,11 @@ from weakref import WeakValueDictionary
 import aiofiles
 import aiofiles.os
 import httpx
+from uvicorn.server import logger
 
 from components.utils import *
 from main import get_or_cache_alist_raw_url
 from typing import AsyncGenerator, Optional
-
 
 cache_locks = WeakValueDictionary()
 
@@ -55,17 +55,16 @@ async def read_file(
                     break
                 yield data
     except FileNotFoundError:
-        print(f"File not found: {file_path}")
-    except PermissionError:
-        print(f"Permission denied: {file_path}")
-    except IOError as e:
-        print(f"IO error occurred while reading file: {e}")
+        # print(f"File not found: {file_path}")
+        logger.error(f"File not found: {file_path}")
     except Exception as e:
-        print(f"Unexpected error occurred while reading file: {e}")
+        # print(f"Unexpected error occurred while reading file: {e}")
+        logger.error(f"Unexpected error occurred while reading file: {e}")
     finally:
         if auto_delete:
             await aiofiles.os.remove(file_path)
-            print(f"Cache File Auto Deleted: {file_path}")
+            # print(f"Cache File Auto Deleted: {file_path}")
+            logger.info(f"Cache File Auto Deleted: {file_path}")
 
 
 async def write_cache_file(item_id, path, req_header=None, cache_size=52428800, start_point=0, file_size=None, host_url=None, client: httpx.AsyncClient=None) -> bool:
@@ -93,19 +92,22 @@ async def write_cache_file(item_id, path, req_header=None, cache_size=52428800, 
     elif file_size is not None:
         end_point = file_size - 1
     else:
-        print(f"{get_current_time()}-Cache Error {start_point}, File Size is None")
+        # print(f"{get_current_time()}-Cache Error {start_point}, File Size is None")
+        logger.error(f"Cache Error {start_point}, File Size is None")
         return
     
     # 获取Alist Raw Url
     code, raw_url = await get_or_cache_alist_raw_url(path, host_url, client)
     if code != 200:
-        print(f"{get_current_time()}-Cache Error {start_point}-{end_point}, Alist Return: code: {code} and url: {raw_url}")
+        # print(f"{get_current_time()}-Cache Error {start_point}-{end_point}, Alist Return: code: {code} and url: {raw_url}")
+        logger.error(f"Cache Error {start_point}-{end_point}, Alist Return: code: {code} and details: {raw_url}")
         return False
     
     # 根据起始点和缓存大小确定缓存文件路径
     cache_file_name = f'cache_file_{start_point}_{end_point}'
     cache_file_path = os.path.join(cache_path, subdirname, dirname, cache_file_name)
-    print(f"\n {get_current_time()} - Start to cache file {start_point}-{end_point}: {item_id}, file path: {cache_file_path}")
+    # print(f"\n {get_current_time()} - Start to cache file {start_point}-{end_point}: {item_id}, file path: {cache_file_path}")
+    logger.info(f"Start to cache file {start_point}-{end_point}: {item_id}, file path: {cache_file_path}")
     
     os.makedirs(os.path.dirname(cache_file_path), exist_ok=True)
      
@@ -123,11 +125,13 @@ async def write_cache_file(item_id, path, req_header=None, cache_size=52428800, 
                 file_range_start, file_range_end = map(int, file.split('_')[2:4])
                 
                 if start_point >= file_range_start and end_point <= file_range_end:
-                    print(f"{get_current_time()}-WARNING: Cache Range Already Exists. Abort.")
+                    # print(f"{get_current_time()}-WARNING: Cache Range Already Exists. Abort.")
+                    logger.warning(f"Cache Range Already Exists. Abort.")
                     await aiofiles.os.remove(cache_write_tag_path)
                     return False
                 elif start_point <= file_range_start and end_point >= file_range_end:
-                    print(f"{get_current_time()}-WARNING: Existing Cache Range within new range. Deleting old cache.")
+                    # print(f"{get_current_time()}-WARNING: Existing Cache Range within new range. Deleting old cache.")
+                    logger.warning(f"Existing Cache Range within new range. Deleting old cache.")
                     await aiofiles.os.remove(os.path.join(cache_path, subdirname, dirname, file))
         
         # 请求Alist Raw Url，好像请求头没太所谓
@@ -140,36 +144,30 @@ async def write_cache_file(item_id, path, req_header=None, cache_size=52428800, 
         # Modify the range to startPoint-first50M
         req_header['range'] = f"bytes={start_point}-{end_point}"
 
-        # 如果请求失败，删除空缓存文件
         try:
+            # 请求数据
             resp = await client.get(raw_url, headers=req_header)
+            if resp.status_code != 206:
+                logger.error(f"Write Cache Error {start_point}-{end_point}: Upstream return code: {resp.status_code}")
+                raise ValueError("Upstream response code not 206")
+            
+            # 写入缓存文件
+            async with aiofiles.open(cache_file_path, 'wb') as f:
+                async for chunk in resp.aiter_bytes(chunk_size=1024):
+                    await f.write(chunk)
+            logger.info(f"Write Cache file {start_point}-{end_point}: {item_id} has been written, file path: {cache_file_path}")
+            
+            # 删除写入标签文件并返回成功
+            await aiofiles.os.remove(cache_write_tag_path)
+            return True
+
         except Exception as e:
-            print(f"{get_current_time()}-Write Cache Error {start_point}-{end_point}: {e}")
+            # 错误处理并删除缓存文件和标签文件
+            logger.error(f"Write Cache Error {start_point}-{end_point}: {e}")
             await aiofiles.os.remove(cache_file_path)
             await aiofiles.os.remove(cache_write_tag_path)
             return False
-        
-        if resp.status_code == 206: 
-            try:
-                # print(f"Start to write cache file: {item_id}")
-                async with aiofiles.open(cache_file_path, 'wb') as f:
-                    async for chunk in resp.aiter_bytes(chunk_size=1024):
-                        await f.write(chunk)
-                        
-                print(f"{get_current_time()}-Write Cache file {start_point}-{end_point}: {item_id} has been written, file path: {cache_file_path}")
-                
-                await aiofiles.os.remove(cache_write_tag_path)
-                return True
-            except Exception as e:
-                print(f"{get_current_time()}-Write Cache Error {start_point}-{end_point}: {e}")
-                await aiofiles.os.remove(cache_file_path)
-                await aiofiles.os.remove(cache_write_tag_path)
-                return False
-        else:
-            print(f"{get_current_time()}-Write Cache Error {start_point}-{end_point}: Upstream return code: {resp.status_code}")
-            await aiofiles.os.remove(cache_file_path)
-            await aiofiles.os.remove(cache_write_tag_path)
-            return False
+
     
 def read_cache_file(item_id, path, start_point=0, end_point=None):
     """
@@ -194,11 +192,13 @@ def read_cache_file(item_id, path, start_point=0, end_point=None):
                 # 调整 end_point 的值
                 adjusted_end_point = None if end_point is None or end_point > range_end else end_point - start_point
                 
-                print(f"{get_current_time()}-Read Cache: {os.path.join(file_dir, file)}")
+                # print(f"{get_current_time()}-Read Cache: {os.path.join(file_dir, file)}")
+                logger.info(f"Read Cache: {os.path.join(file_dir, file)}")
 
                 return read_file(os.path.join(file_dir, file), start_point-range_start, adjusted_end_point)
             
-    print(f"{get_current_time()}-Read Cache Error: There is no cache file in the cache directory: {path}.")
+    # print(f"{get_current_time()}-Read Cache Error: There is no cache file in the cache directory: {path}.")
+    logger.error(f"Read Cache Error: There is no matched cache file in the cache directory: {path}.")
     return None
 
 def get_cache_status(item_id, path, start_point=0) -> bool:
@@ -214,13 +214,15 @@ def get_cache_status(item_id, path, start_point=0) -> bool:
     cache_dir = os.path.join(cache_path, subdirname, dirname)
     
     if os.path.exists(cache_dir) is False:
-        print(f"{get_current_time()}-Get Cache Error: Cache directory does not exist: {os.path.join(cache_path, subdirname, dirname)}")
+        # print(f"{get_current_time()}-Get Cache Error: Cache directory does not exist: {os.path.join(cache_path, subdirname, dirname)}")
+        logger.error(f"Get Cache Error: Cache directory does not exist: {os.path.join(cache_path, subdirname, dirname)}")
         return False
     
     # 检查是否有任何缓存文件正在写入
     for file in os.listdir(cache_dir):
         if file.endswith('.tag'):
-            print(f"{get_current_time()}-Get Cache Error: Cache file is being written: {os.path.join(cache_path, subdirname, dirname, file)}")
+            # print(f"{get_current_time()}-Get Cache Error: Cache file is being written: {os.path.join(cache_path, subdirname, dirname, file)}")
+            logger.error(f"Get Cache Error: Cache file is being written: {os.path.join(cache_path, subdirname, dirname, file)}")
             return False
     
     # 查找与 startPoint 匹配的缓存文件，endPoint 为文件名的一部分
@@ -230,7 +232,8 @@ def get_cache_status(item_id, path, start_point=0) -> bool:
             if range_start <= start_point <= range_end:
                 return True
     
-    print(f"{get_current_time()}-Get Cache Error: Cache file for range {start_point} not found.")
+    # print(f"{get_current_time()}-Get Cache Error: Cache file for range {start_point} not found.")
+    logger.error(f"Get Cache Error: Cache file for range {start_point} not found.")
     return False
 
 async def delete_cache_file(item_id, path, start_point=0):
@@ -238,7 +241,8 @@ async def delete_cache_file(item_id, path, start_point=0):
     删除range包含start_point的缓存文件
     """
     if not get_cache_status(item_id, path, start_point):
-        print(f"{get_current_time()}-Delete Cache Error: Cache file for range {start_point} not found.")
+        # print(f"{get_current_time()}-Delete Cache Error: Cache file for range {start_point} not found.")
+        logger.error(f"Delete Cache Error: Cache file for range {start_point} not found.")
         return False
     
     subdirname, dirname = get_hash_subdirectory_from_path(path)
@@ -248,8 +252,10 @@ async def delete_cache_file(item_id, path, start_point=0):
             range_start, range_end = map(int, file.split('_')[2:4])
             if range_start <= start_point <= range_end:
                 await aiofiles.os.remove(os.path.join(cache_path, subdirname, dirname, file))
-                print(f"{get_current_time()}-Delete Cache file {range_start}-{range_end}: {item_id}")
+                # print(f"{get_current_time()}-Delete Cache file {range_start}-{range_end}: {item_id}")
+                logger.info(f"Delete Cache file {range_start}-{range_end}: {item_id}")
                 return True
         
-    print(f"{get_current_time()}-Delete Cache Error: Cache file for range {start_point} not found.")
+    # print(f"{get_current_time()}-Delete Cache Error: Cache file for range {start_point} not found.")
+    logger.error(f"Delete Cache Error: Cache file for range {start_point} not found.")
     return False
