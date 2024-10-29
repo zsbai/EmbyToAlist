@@ -186,7 +186,7 @@ async def reverse_proxy(cache: AsyncGenerator[bytes, None],
     读取缓存数据和URL，返回合并后的流
 
     :param cache: 缓存数据
-    :param url: 源文件的URL
+    :param url_task: 源文件的URL
     :param request_header: 请求头，用于请求网盘，包含host和range
     :param response_headers: 返回的响应头，包含调整过的range以及content-type
     :param client: HTTPX异步客户端
@@ -202,7 +202,8 @@ async def reverse_proxy(cache: AsyncGenerator[bytes, None],
             code, raw_url = await url_task
             if code != 200:
                 raise ValueError(f"Error: get_alist_raw_url failed, {raw_url}")
-            async with client.stream("GET", url_task, headers=request_header) as response:
+            request_header['host'] = raw_url.split('/')[2]
+            async with client.stream("GET", raw_url, headers=request_header) as response:
                 response.raise_for_status()
                 if response.status_code != 206:
                     raise ValueError(f"Expected 206 response, got {response.status_code}")

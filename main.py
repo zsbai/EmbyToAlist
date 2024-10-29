@@ -144,8 +144,7 @@ async def request_handler(status_code: int,
             return await reverse_proxy(cache=None, 
                                        url_task=alist_raw_url, 
                                        request_header={
-                                           "Range": source_range_header, 
-                                           "Host": raw_url.split('/')[2]
+                                           "Range": source_range_header
                                            },
                                        response_headers=resp_header,
                                        client=client)
@@ -165,9 +164,7 @@ async def request_handler(status_code: int,
             return await reverse_proxy(cache=cache, 
                                        url_task=alist_raw_url, 
                                        request_header={
-                                           "Range": source_range_header, 
-                                           "Host": raw_url.split('/')[2]
-                                           },
+                                           "Range": source_range_header                                           },
                                        response_headers=resp_header,
                                        client=client)
                 
