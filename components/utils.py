@@ -21,7 +21,6 @@ def get_time(func):
         start = time.time()
         result = func(*args, **kwargs)
         end = time.time()
-        # print(f"Function {func.__name__} takes: {end - start} seconds")
         logger.info(f"Function {func.__name__} takes: {end - start} seconds")
         return result
     return wrapper
@@ -73,8 +72,7 @@ def should_redirect_to_alist(file_path: str) -> bool:
     检查文件路径是否在不需要重定向的路径中
     """
     if any(file_path.startswith(path) for path in not_redirect_paths):
-        # print(f"\nFilePath is in notRedirectPaths, return Emby Original Url")
-        logger.info(f"File Path is in notRedirectPaths, return Emby Original Url")
+        logger.debug(f"File Path is in notRedirectPaths, return Emby Original Url")
         return False
     else:
         return True
@@ -106,7 +104,7 @@ def transform_file_path(file_path, mount_path_prefix_remove=mount_path_prefix_re
             if char in file_path:
                 file_path = file_path.replace(char, '‛'+char)
             
-    if convert_mount_path or convert_special_chars: logger.info(f"Processed File Path: {file_path}")
+    if convert_mount_path or convert_special_chars: logger.debug(f"Processed File Path: {file_path}")
     return file_path
 
 def extract_api_key(request: fastapi.Request):
@@ -139,7 +137,6 @@ async def get_alist_raw_url(file_path, host_url, client: httpx.AsyncClient) -> T
         req.raise_for_status()
         req = req.json()
     except Exception as e:
-        # print(e)
         logger.error(f"Error: get_alist_raw_url failed, {e}")
         return ('Alist Server Error', 500)
     
@@ -173,11 +170,9 @@ async def get_alist_raw_url(file_path, host_url, client: httpx.AsyncClient) -> T
         return 200, raw_url
                
     elif code == 403:
-        # print("403 Forbidden, Please check your Alist Key")
         logger.error("Alist server response 403 Forbidden, Please check your Alist Key")
         return 403, '403 Forbidden, Please check your Alist Key'
     else:
-        # print(f"Error: {req['message']}")
         logger.error(f"Error: {req['message']}")
         return 500, req['message']        
 
@@ -203,7 +198,6 @@ async def reverse_proxy(cache: AsyncGenerator[bytes, None],
             if cache is not None:
                 async for chunk in cache:
                     yield chunk
-                # print("Cache exhausted, streaming from source")
                 logger.info("Cache exhausted, streaming from source")
             code, raw_url = await url_task
             if code != 200:
@@ -221,6 +215,5 @@ async def reverse_proxy(cache: AsyncGenerator[bytes, None],
 
         return fastapi.responses.StreamingResponse(merged_stream(), headers=response_headers, status_code=206)
     except Exception as e:
-        # print(f"Error: reverse_proxy failed, {e}")
         logger.error(f"Reverse_proxy failed, {e}")
         raise fastapi.HTTPException(status_code=500, detail="Reverse Proxy Failed")

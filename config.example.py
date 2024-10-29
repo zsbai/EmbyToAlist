@@ -38,6 +38,8 @@ convert_mount_path = False
 mount_path_prefix_remove = "/"
 mount_path_prefix_add = ""
 
-# 是否缓存视频前15秒用于播放加速
+# 是否缓存视频前15秒用于起播加速
 enable_cache = False
 cache_path = "/root/EmbyToAlist/cache"
+
+log_level = "INFO"

@@ -39,7 +39,6 @@ async def get_file_info(item_id, MediaSourceId, apiKey, client: httpx.AsyncClien
     req = await client.get(url)
     req = req.json()
     if req is None: 
-        # print(f"{get_current_time()} - Error: Failed to get file info")
         logger.error("Failed to get file info")
         return data
     for i in req['MediaSources']:
@@ -66,14 +65,11 @@ async def get_or_cache_alist_raw_url(file_path, host_url, client=httpx.AsyncClie
     if cache_key in URL_CACHE.keys():
         now_time = datetime.now().timestamp()
         if now_time - URL_CACHE[cache_key]['time'] < 300:
-            # print("\nAlist Raw URL Cache exists and is valid (less than 5 minutes)")
-            # print("Redirected Url: " + URL_CACHE[cache_key]['url'])
-            logger.info("Alist Raw URL Cache exists and is valid (less than 5 minutes)")
+            logger.debug("Alist Raw URL Cache exists and is valid (less than 5 minutes)")
             logger.info("Redirected Url: " + URL_CACHE[cache_key]['url'])
             return 200, URL_CACHE[cache_key]['url']
         else:
-            # print("\nAlist Raw URL Cache is expired, re-fetching...")
-            logger.info("Alist Raw URL Cache is expired, re-fetching...")
+            logger.debug("Alist Raw URL Cache is expired, re-fetching...")
             del URL_CACHE[cache_key]
     
     code, raw_url = await get_alist_raw_url(file_path, host_url=host_url, client=client)
@@ -214,7 +210,6 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
     if not should_redirect_to_alist(file_info['Path']):
         # 拼接完整的URL，如果query为空则不加问号
         redirected_url = f"{host_url}preventRedirect{request.url.path}{'?' + request.url.query if request.url.query else ''}"
-        # print("Redirected Url: " + redirected_url)
         logger.info("Redirected Url: " + redirected_url)
         return fastapi.responses.RedirectResponse(url=redirected_url, status_code=302)
     
@@ -242,7 +237,7 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
         start_byte, end_byte = map(int, bytes_range.split('-'))
         
     # print("Request Range Header: " + range_header)
-    logger.info("Request Range Header: " + range_header)
+    logger.debug("Request Range Header: " + range_header)
     
     if start_byte >= file_info['Size']:
         # print("\nWarning: Requested Range is out of file size.")
@@ -306,15 +301,12 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
             # print("\nCached file exists and is valid")
             logger.info("Cached file exists and is valid")
             # 返回缓存内容和调整后的响应头
-            # print("Response Range Header: " + f"bytes {start_byte}-{resp_end_byte}/{file_info['Size']}")
-            # print("Response Content-Length: " + f'{resp_file_size}')
             logger.debug("Response Range Header: " + f"bytes {start_byte}-{resp_end_byte}/{file_info['Size']}")
             logger.debug("Response Content-Length: " + f'{resp_file_size}')
             return fastapi.responses.StreamingResponse(read_cache_file(item_id=item_id, path=alist_path, start_point=start_byte, end_point=end_byte), headers=resp_headers, status_code=206)
         else:
             # 后台任务缓存文件
             background_tasks.add_task(write_cache_file, item_id=item_id, path=alist_path, req_header=request.headers, cache_size=0, start_point=start_byte, file_size=file_info['Size'], host_url=host_url, client=app.requests_client)
-            # print(f"{get_current_time()}: Started background task to write cache file.")
             logger.info("Started background task to write cache file.")
 
             # 重定向到原始URL
@@ -333,4 +325,9 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
         return await request_handler(status_code=206, file_path=alist_path, range_header=(start_byte, end_byte, cacheFileSize), host_url=host_url, resp_header=resp_headers, client=app.requests_client)
 
 if __name__ == "__main__":
-    uvicorn.run(app, port=60001, host='0.0.0.0', log_config="logger_config.json")
+    try:
+        log_level = log_level.lower()
+    except NameError:
+        logger.warning("Log level not set in config.py, defaulting to INFO")
+        log_level = "info"
+    uvicorn.run(app, port=60001, host='0.0.0.0', log_config="logger_config.json", log_level=log_level)
