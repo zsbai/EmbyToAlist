@@ -10,10 +10,6 @@ from uvicorn.server import logger
 from config import *
 from typing import AsyncGenerator, Tuple
 
-def get_current_time() -> str:
-    """获取当前时间，并格式化为包含毫秒的字符串"""
-    return datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
-
 # a wrapper function to get the time of the function
 def get_time(func):
     def wrapper(*args, **kwargs):

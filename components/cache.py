@@ -158,14 +158,14 @@ async def write_cache_file(item_id, path, req_header=None, cache_size=52428800, 
     
 def read_cache_file(item_id, path, start_point=0, end_point=None):
     """
-    读取缓存文件
+    读取缓存文件，该函数不是异步的，将直接返回一个异步生成器
     
     :param item_id: Emby Item ID
     :param path: 文件路径
     :param start_point: 缓存文件的起始点
     :param end_point: 缓存文件的结束点
     
-    :return: 缓存文件的内容
+    :return: function read_file
     """
     subdirname, dirname = get_hash_subdirectory_from_path(path)
     file_dir = os.path.join(cache_path, subdirname, dirname)
@@ -216,25 +216,4 @@ def get_cache_status(item_id, path, start_point=0) -> bool:
                 return True
     
     logger.error(f"Get Cache Error: Cache file for range {start_point} not found.")
-    return False
-
-async def delete_cache_file(item_id, path, start_point=0):
-    """
-    删除range包含start_point的缓存文件
-    """
-    if not get_cache_status(item_id, path, start_point):
-        logger.error(f"Delete Cache Error: Cache file for range {start_point} not found.")
-        return False
-    
-    subdirname, dirname = get_hash_subdirectory_from_path(path)
-    
-    for file in os.listdir(os.path.join(cache_path, subdirname, dirname)):
-        if file.startswith('cache_file_'):
-            range_start, range_end = map(int, file.split('_')[2:4])
-            if range_start <= start_point <= range_end:
-                await aiofiles.os.remove(os.path.join(cache_path, subdirname, dirname, file))
-                logger.info(f"Delete Cache file {range_start}-{range_end}: {item_id}")
-                return True
-        
-    logger.error(f"Delete Cache Error: Cache file for range {start_point} not found.")
     return False
