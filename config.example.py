@@ -14,7 +14,7 @@ alist_key = ""
 # 可以用{host_url}代指请求头的host
 # 如果url为列表，则自动选择二级域名一致的url。和host_url互斥
 alist_download_url_replacement_map = {
-    "path in Alist": "url",
+    "/path/in/Alist": "https://url",
     "/movie": "https://download.example.com/onedrive/",
     "/anime": "{host_url}/anime/",
     "/tv": ["https://download.example.com/tv/", "https://download.example2.net/tv/"],
