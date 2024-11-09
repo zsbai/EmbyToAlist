@@ -66,6 +66,8 @@ def get_hash_subdirectory_from_path(file_path) -> tuple:
 def should_redirect_to_alist(file_path: str) -> bool:
     """
     检查文件路径是否在不需要重定向的路径中
+    
+    :param file_path: 系统文件路径，非alist路径
     """
     if any(file_path.startswith(path) for path in not_redirect_paths):
         logger.debug(f"File Path is in notRedirectPaths, return Emby Original Url")

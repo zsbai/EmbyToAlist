@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 from datetime import datetime
+from dataclasses import dataclass
 
 import fastapi
 import httpx
@@ -9,7 +10,7 @@ from uvicorn.server import logger
 from config import *
 from components.utils import *
 from components.cache import *
-from typing import Tuple
+from typing import Tuple, Optional
 
 # 使用上下文管理器，创建异步请求客户端
 @asynccontextmanager
@@ -21,9 +22,26 @@ async def lifespan(app: fastapi.FastAPI):
 app = fastapi.FastAPI(lifespan=lifespan)
 
 URL_CACHE = {}
+
+@dataclass
+class FileInfo:
+    # status: bool
+    path: str
+    bitrate: int
+    size: int
+    container: str
+    cache_file_size: int
     
+@dataclass
+class RequestInfo:
+    file_info: FileInfo
+    host_url: str
+    start_byte: Optional[int] = None
+    end_byte: Optional[int] = None
+    end_byte_exceeds_cache: Optional[bool] = None
+
 # used to get the file info from emby server
-async def get_file_info(item_id, MediaSourceId, apiKey, client: httpx.AsyncClient) -> dict:
+async def get_file_info(item_id, media_source_id, api_key, client: httpx.AsyncClient) -> FileInfo:
     """
     从Emby服务器获取文件信息
     
@@ -32,31 +50,29 @@ async def get_file_info(item_id, MediaSourceId, apiKey, client: httpx.AsyncClien
     :param apiKey: Emby API Key
     :return: 包含文件信息的字典
     """
-    data = {}
-    url = f"{emby_server}/emby/Items/{item_id}/PlaybackInfo?MediaSourceId={MediaSourceId}&api_key={apiKey}"
-    # print(f"{get_current_time()} - Requested Info URL: {url}")
+    url = f"{emby_server}/emby/Items/{item_id}/PlaybackInfo?MediaSourceId={media_source_id}&api_key={api_key}"
     logger.info(f"Requested Info URL: {url}")
-    req = await client.get(url)
-    req = req.json()
-    if req is None: 
-        logger.error("Failed to get file info")
-        return data
-    for i in req['MediaSources']:
-        # print(i)
-        if i['Id'] == MediaSourceId:
-            data['Status'] = "Success"
-            data['Path'] = i['Path']
-            # data['DirectStreamUrl'] = i['DirectStreamUrl']
-            # data['Protocol'] = i['Protocol']
-            data['Bitrate'] = i['Bitrate'] 
-            data['Size'] = i['Size']
-            data['Container'] = i['Container']
-            return data
+    try:
+        req = await client.get(url)
+        req.raise_for_status()
+        req = req.json()
+    except Exception as e:
+        logger.error(f"Error: failed to request Emby server, {e}")
+        raise fastapi.HTTPException(status_code=500, detail=f"Failed to request Emby server, {e}")
     
-    data['Status'] = "Error"
-    data['Message'] = "Can't match MediaSourceId"
-    return data
-
+    for i in req['MediaSources']:
+        if i['Id'] == media_source_id:
+            return FileInfo(
+                path=i.get('Path', None),
+                bitrate=i.get('Bitrate', 27962026),
+                size=i.get('Size', 0),
+                container=i.get('Container', None),
+                # 获取15秒的缓存文件大小， 并取整
+                cache_file_size=int(i.get('Bitrate', 27962026) / 8 * 15)
+            )
+    # can't find the matched MediaSourceId in MediaSources
+    raise fastapi.HTTPException(status_code=500, detail="Can't match MediaSourceId")
+    
 # return Alist Raw Url
 @get_time
 async def get_or_cache_alist_raw_url(file_path, host_url, client=httpx.AsyncClient) -> Tuple[int, str]:
@@ -102,9 +118,7 @@ async def get_or_cache_alist_raw_url(file_path, host_url, client=httpx.AsyncClie
 # 2. 请求范围在文件末尾2MB内
 async def request_handler(status_code: int,
                           cache: AsyncGenerator[bytes, None]=None,
-                          file_path: str=None,
-                          range_header: Tuple[int, int, int]=None,
-                          host_url: str=None, 
+                          request_info: RequestInfo=None,
                           resp_header: dict=None,
                           client: httpx.AsyncClient=None
                           ) -> fastapi.Response:
@@ -120,9 +134,10 @@ async def request_handler(status_code: int,
     
     :return fastapi.Response: 返回重定向或反代的响应
     """
+    host_url = request_info.host_url
+    file_path = request_info.file_info.path
     # 如果满足alist直链条件，提前通过异步缓存alist直链
-    if host_url is not None and file_path is not None:
-        alist_raw_url = asyncio.create_task(get_or_cache_alist_raw_url(file_path=file_path, host_url=host_url, client=client))
+    alist_raw_url = asyncio.create_task(get_or_cache_alist_raw_url(file_path=file_path, host_url=host_url, client=client))
     
     if status_code == 302:
         code, raw_url = await alist_raw_url
@@ -131,7 +146,10 @@ async def request_handler(status_code: int,
         return fastapi.responses.RedirectResponse(url=raw_url, status_code=302)
     
     if status_code == 206:
-        start_byte, end_byte, local_cache_size = range_header
+        # start_byte, end_byte, local_cache_size = range_header
+        start_byte = request_info.start_byte
+        end_byte = request_info.end_byte
+        local_cache_size = request_info.file_info.cache_file_size
 
         if start_byte >= local_cache_size:
             # Case 1: Requested range is entirely beyond the cache
@@ -188,117 +206,106 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
     if not media_source_id:
         raise fastapi.HTTPException(status_code=400, detail="MediaSourceId is required")
 
-    file_info = await get_file_info(item_id, media_source_id, api_key, client=app.requests_client)
+    file_info: FileInfo = await get_file_info(item_id, media_source_id, api_key, client=app.requests_client)
     # host_url example: https://emby.example.com:8096/
     host_url = str(request.base_url)
+    request_info = RequestInfo(file_info=file_info, host_url=host_url)
     
-    if file_info['Status'] == "Error":
-        # print(file_info['Message'])
-        logger.error(file_info['Message'])
-        raise fastapi.HTTPException(status_code=500, detail=file_info['Message'])
-    
-    
-    # print(f"\n{get_current_time()} - Requested Item ID: {item_id}")
-    # print("MediaFile Mount Path: " + file_info.get('Path', 'Unknown'))
     logger.info(f"Requested Item ID: {item_id}")
-    logger.info("MediaFile Mount Path: " + file_info.get('Path', 'Unknown'))
+    logger.info("MediaFile Mount Path: " + file_info.path)
     
     # if checkFilePath return False：return Emby originalUrl
-    if not should_redirect_to_alist(file_info['Path']):
+    if not should_redirect_to_alist(file_info.path):
         # 拼接完整的URL，如果query为空则不加问号
         redirected_url = f"{host_url}preventRedirect{request.url.path}{'?' + request.url.query if request.url.query else ''}"
         logger.info("Redirected Url: " + redirected_url)
         return fastapi.responses.RedirectResponse(url=redirected_url, status_code=302)
     
-    alist_path = transform_file_path(file_info['Path'])
+    alist_path = transform_file_path(file_info.path)
+    file_info.path = alist_path
     
     # 如果没有启用缓存，直接返回Alist Raw Url
     if not enable_cache:
-        return await request_handler(status_code=302, file_path=alist_path, host_url=host_url, client=app.requests_client)
+        return await request_handler(status_code=302, request_info=request_info, client=app.requests_client)
 
     range_header = request.headers.get('Range', '')
     if not range_header.startswith('bytes='):
-        # print("\nWarning: Range header is not correctly formatted.")
-        # print(request.headers)
         logger.warning("Range header is not correctly formatted.")
         logger.warning(f"Request Headers: {request.headers}")
-        return await request_handler(status_code=302, file_path=alist_path, host_url=host_url, client=app.requests_client)
+        return await request_handler(status_code=302, request_info=request_info, client=app.requests_client)
     
     # 解析Range头，获取请求的起始字节
     bytes_range = range_header.split('=')[1]
-    # start_byte = int(bytes_range.split('-')[0])
     if bytes_range.endswith('-'):
         start_byte = int(bytes_range[:-1])
         end_byte = None
     else:
         start_byte, end_byte = map(int, bytes_range.split('-'))
         
-    # print("Request Range Header: " + range_header)
     logger.debug("Request Range Header: " + range_header)
+    request_info.start_byte = start_byte
+    request_info.end_byte = end_byte
+    request_info.end_byte_exceeds_cache = end_byte is None or end_byte > file_info.cache_file_size
     
-    if start_byte >= file_info['Size']:
-        # print("\nWarning: Requested Range is out of file size.")
+    if start_byte >= file_info.size:
         logger.warning("Requested Range is out of file size.")
-        return request_handler(status_code=416, resp_header={'Content-Range': f'bytes */{file_info["Size"]}'})
+        return request_handler(status_code=416, request_info=request_info, resp_header={'Content-Range': f'bytes */{file_info.size}'})
 
-    # 获取缓存15秒的文件大小， 并取整
-    cacheFileSize = int(file_info.get('Bitrate', 27962026) / 8 * 15)
+    cache_file_size = file_info.cache_file_size
     
     # 应该走缓存的情况1：请求文件开头
-    if start_byte < cacheFileSize:
+    if start_byte < cache_file_size:
         
         # 如果请求末尾在cache范围内
-        cache_end_byte = cacheFileSize if end_byte is None or end_byte > cacheFileSize else end_byte
-        resp_end_byte = file_info['Size'] - 1 if end_byte is None or end_byte > cache_end_byte else cache_end_byte
+        # 如果请求末尾在缓存文件大小之外，取缓存文件大小；否则取请求末尾
+        cache_end_byte = cache_file_size if end_byte is None or end_byte > cache_file_size else end_byte
+        resp_end_byte = file_info.size - 1 if end_byte is None or end_byte > cache_end_byte else cache_end_byte
         
         if get_cache_status(item_id, alist_path, start_byte):
             
             resp_headers = {
-                'Content-Type': get_content_type(file_info['Container']),
+                'Content-Type': get_content_type(file_info.container),
                 'Accept-Ranges': 'bytes',
-                'Content-Range': f"bytes {start_byte}-{resp_end_byte}/{file_info['Size']}",
+                'Content-Range': f"bytes {start_byte}-{resp_end_byte}/{file_info.size}",
                 'Content-Length': f'{resp_end_byte - start_byte + 1}',
                 'Cache-Control': 'private, no-transform, no-cache',
                 'X-EmbyToAList-Cache': 'Hit',
             }
             
-            # print("\nCached file exists and is valid")
             logger.info("Cached file exists and is valid")
             # 返回缓存内容和调整后的响应头
             
-            return await request_handler(status_code=206, cache=read_cache_file(item_id, alist_path, start_byte, cache_end_byte), file_path=alist_path, range_header=(start_byte, end_byte, cacheFileSize), host_url=host_url, resp_header=resp_headers, client=app.requests_client)
+            return await request_handler(status_code=206, cache=read_cache_file(item_id, alist_path, start_byte, cache_end_byte), request_info=request_info, resp_header=resp_headers, client=app.requests_client)
         else:
             # 后台任务缓存文件
-            background_tasks.add_task(write_cache_file, item_id, alist_path, request.headers, cacheFileSize, start_byte, file_size=None, host_url=host_url, client=app.requests_client)
-            # print(f"{get_current_time()}: Started background task to write cache file.")
+            background_tasks.add_task(write_cache_file, item_id, alist_path, request.headers, cache_file_size, start_byte, file_size=None, host_url=host_url, client=app.requests_client)
             logger.info("Started background task to write cache file.")
 
             # 重定向到原始URL
-            return await request_handler(status_code=302, file_path=alist_path, host_url=host_url, client=app.requests_client)
+            return await request_handler(status_code=302, request_info=request_info, client=app.requests_client)
      
     # 应该走缓存的情况2：请求文件末尾
-    elif file_info['Size'] - start_byte < 2 * 1024 * 1024:
+    elif file_info.size - start_byte < 2 * 1024 * 1024:
         if get_cache_status(item_id, path=alist_path, start_point=start_byte):
             if end_byte is None:
-                resp_end_byte = file_info['Size'] - 1
+                resp_end_byte = file_info.size - 1
                 resp_file_size = (resp_end_byte + 1) - start_byte
             else:
                 resp_end_byte = end_byte
                 resp_file_size = end_byte - start_byte + 1
 
             resp_headers = {
-                'Content-Type': get_content_type(file_info['Container']),
+                'Content-Type': get_content_type(file_info.container),
                 'Accept-Ranges': 'bytes',
-                'Content-Range': f"bytes {start_byte}-{resp_end_byte}/{file_info['Size']}",
+                'Content-Range': f"bytes {start_byte}-{resp_end_byte}/{file_info.size}",
                 'Content-Length': f'{resp_file_size}',
                 'Cache-Control': 'private, no-transform, no-cache',
                 'X-EmbyToAList-Cache': 'Hit',
             }
             
-            # print("\nCached file exists and is valid")
             logger.info("Cached file exists and is valid")
             # 返回缓存内容和调整后的响应头
-            logger.debug("Response Range Header: " + f"bytes {start_byte}-{resp_end_byte}/{file_info['Size']}")
+            logger.debug("Response Range Header: " + f"bytes {start_byte}-{resp_end_byte}/{file_info.size}")
             logger.debug("Response Content-Length: " + f'{resp_file_size}')
             return fastapi.responses.StreamingResponse(read_cache_file(item_id=item_id, path=alist_path, start_point=start_byte, end_point=end_byte), headers=resp_headers, status_code=206)
         else:
@@ -307,19 +314,20 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
             logger.info("Started background task to write cache file.")
 
             # 重定向到原始URL
-            return await request_handler(status_code=302, file_path=alist_path, host_url=host_url, client=app.requests_client)
+            return await request_handler(status_code=302, request_info=request_info, client=app.requests_client)
     else:
         
         resp_headers = {
-            'Content-Type': get_content_type(file_info['Container']),
+            'Content-Type': get_content_type(file_info.container),
             'Accept-Ranges': 'bytes',
-            'Content-Range': f'bytes {start_byte}-{file_info["Size"] - 1}/{file_info["Size"]}',
-            'Content-Length': f'{file_info["Size"] - start_byte}',
+            'Content-Range': f'bytes {start_byte}-{file_info.size - 1}/{file_info.size}',
+            'Content-Length': f'{file_info.size - start_byte}',
             'Cache-Control': 'private, no-transform, no-cache',
             'X-EmbyToAList-Cache': 'Miss',
         }
         
-        return await request_handler(status_code=206, file_path=alist_path, range_header=(start_byte, end_byte, cacheFileSize), host_url=host_url, resp_header=resp_headers, client=app.requests_client)
+        # 这里用206是因为响应302后vlc可能会出bug，导致无限请求
+        return await request_handler(status_code=206, request_info=request_info, resp_header=resp_headers, client=app.requests_client)
 
 if __name__ == "__main__":
     try:
