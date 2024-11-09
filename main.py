@@ -116,7 +116,7 @@ async def get_or_cache_alist_raw_url(file_path, host_url, client=httpx.AsyncClie
 # 只需返回缓存（不需要alist直链）：
 # 1. 请求范围在缓存范围内
 # 2. 请求范围在文件末尾2MB内
-async def request_handler(status_code: int,
+async def request_handler(expected_status_code: int,
                           cache: AsyncGenerator[bytes, None]=None,
                           request_info: RequestInfo=None,
                           resp_header: dict=None,
@@ -139,13 +139,13 @@ async def request_handler(status_code: int,
     # 如果满足alist直链条件，提前通过异步缓存alist直链
     alist_raw_url = asyncio.create_task(get_or_cache_alist_raw_url(file_path=file_path, host_url=host_url, client=client))
     
-    if status_code == 302:
+    if expected_status_code == 302:
         code, raw_url = await alist_raw_url
         if code != 200:
             raise fastapi.HTTPException(status_code=500, detail=f"Get Alist Raw Url Error: {raw_url};\nCode: {code}")
         return fastapi.responses.RedirectResponse(url=raw_url, status_code=302)
     
-    if status_code == 206:
+    if expected_status_code == 206:
         # start_byte, end_byte, local_cache_size = range_header
         start_byte = request_info.start_byte
         end_byte = request_info.end_byte
@@ -186,10 +186,10 @@ async def request_handler(status_code: int,
                                        response_headers=resp_header,
                                        client=client)
                 
-    if status_code == 416:
+    if expected_status_code == 416:
         return fastapi.responses.Response(status_code=416, headers=resp_header)
     
-    raise fastapi.HTTPException(status_code=500, detail=f"Unexpected argument: {status_code}")
+    raise fastapi.HTTPException(status_code=500, detail=f"Unexpected argument: {expected_status_code}")
 
 # for infuse
 @app.get('/Videos/{item_id}/{filename}')
@@ -226,13 +226,13 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
     
     # 如果没有启用缓存，直接返回Alist Raw Url
     if not enable_cache:
-        return await request_handler(status_code=302, request_info=request_info, client=app.requests_client)
+        return await request_handler(expected_status_code=302, request_info=request_info, client=app.requests_client)
 
     range_header = request.headers.get('Range', '')
     if not range_header.startswith('bytes='):
         logger.warning("Range header is not correctly formatted.")
         logger.warning(f"Request Headers: {request.headers}")
-        return await request_handler(status_code=302, request_info=request_info, client=app.requests_client)
+        return await request_handler(expected_status_code=302, request_info=request_info, client=app.requests_client)
     
     # 解析Range头，获取请求的起始字节
     bytes_range = range_header.split('=')[1]
@@ -249,7 +249,7 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
     
     if start_byte >= file_info.size:
         logger.warning("Requested Range is out of file size.")
-        return request_handler(status_code=416, request_info=request_info, resp_header={'Content-Range': f'bytes */{file_info.size}'})
+        return request_handler(expected_status_code=416, request_info=request_info, resp_header={'Content-Range': f'bytes */{file_info.size}'})
 
     cache_file_size = file_info.cache_file_size
     
@@ -275,14 +275,14 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
             logger.info("Cached file exists and is valid")
             # 返回缓存内容和调整后的响应头
             
-            return await request_handler(status_code=206, cache=read_cache_file(item_id, alist_path, start_byte, cache_end_byte), request_info=request_info, resp_header=resp_headers, client=app.requests_client)
+            return await request_handler(expected_status_code=206, cache=read_cache_file(item_id, alist_path, start_byte, cache_end_byte), request_info=request_info, resp_header=resp_headers, client=app.requests_client)
         else:
             # 后台任务缓存文件
-            background_tasks.add_task(write_cache_file, item_id, alist_path, request.headers, cache_file_size, start_byte, file_size=None, host_url=host_url, client=app.requests_client)
+            background_tasks.add_task(write_cache_file, item_id, request_info, request.headers, client=app.requests_client)
             logger.info("Started background task to write cache file.")
 
             # 重定向到原始URL
-            return await request_handler(status_code=302, request_info=request_info, client=app.requests_client)
+            return await request_handler(expected_status_code=302, request_info=request_info, client=app.requests_client)
      
     # 应该走缓存的情况2：请求文件末尾
     elif file_info.size - start_byte < 2 * 1024 * 1024:
@@ -310,11 +310,11 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
             return fastapi.responses.StreamingResponse(read_cache_file(item_id=item_id, path=alist_path, start_point=start_byte, end_point=end_byte), headers=resp_headers, status_code=206)
         else:
             # 后台任务缓存文件
-            background_tasks.add_task(write_cache_file, item_id=item_id, path=alist_path, req_header=request.headers, cache_size=0, start_point=start_byte, file_size=file_info['Size'], host_url=host_url, client=app.requests_client)
+            background_tasks.add_task(write_cache_file, item_id=item_id, request_info=request_info, req_header=request.headers, client=app.requests_client)
             logger.info("Started background task to write cache file.")
 
             # 重定向到原始URL
-            return await request_handler(status_code=302, request_info=request_info, client=app.requests_client)
+            return await request_handler(expected_status_code=302, request_info=request_info, client=app.requests_client)
     else:
         
         resp_headers = {
@@ -326,8 +326,8 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
             'X-EmbyToAList-Cache': 'Miss',
         }
         
-        # 这里用206是因为响应302后vlc可能会出bug，导致无限请求
-        return await request_handler(status_code=206, request_info=request_info, resp_header=resp_headers, client=app.requests_client)
+        # 这里用206是因为响应302后vlc可能会出bug，不会跟随重定向，而是继续无限重复请求
+        return await request_handler(expected_status_code=206, request_info=request_info, resp_header=resp_headers, client=app.requests_client)
 
 if __name__ == "__main__":
     try:

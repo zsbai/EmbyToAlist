@@ -8,7 +8,7 @@ import httpx
 from uvicorn.server import logger
 
 from components.utils import *
-from main import get_or_cache_alist_raw_url
+from main import get_or_cache_alist_raw_url, FileInfo, RequestInfo
 from typing import AsyncGenerator, Optional
 
 cache_locks = WeakValueDictionary()
@@ -27,7 +27,6 @@ async def read_file(
     start_point: int = 0, 
     end_point: Optional[int] = None, 
     chunk_size: int = 1024*1024, 
-    auto_delete=False
     ) -> AsyncGenerator[bytes, None]:
     """
     读取文件的指定范围，并返回异步生成器。
@@ -59,29 +58,30 @@ async def read_file(
     except Exception as e:
         logger.error(f"Unexpected error occurred while reading file: {e}")
         
-async def write_cache_file(item_id, path, req_header=None, cache_size=52428800, start_point=0, file_size=None, host_url=None, client: httpx.AsyncClient=None) -> bool:
+async def write_cache_file(item_id, request_info: RequestInfo, req_header=None, client: httpx.AsyncClient=None) -> bool:
     """
     写入缓存文件，end point通过cache_size计算得出
     
     :param item_id: Emby Item ID
-    :param path: 文件路径, 用于获取Alist Raw Url
     :param req_header: 请求头，用于请求Alist Raw Url
-    :param cache_size: 缓存文件大小，默认为 50MB
-    :param start_point: 缓存文件的起始点
-    :param file_size: 文件大小
-    :param host_url: 请求中请求头的host
-    ::param client: HTTPX异步客户端
+    :param client: HTTPX异步客户端
     
     :return: 缓存是否成功
-    """
+    """    
+    path = request_info.file_info.path
+    file_size = request_info.file_info.size
+    cache_size = request_info.file_info.cache_file_size
+    start_point = request_info.start_byte
+    host_url = request_info.host_url
+    
     subdirname, dirname = get_hash_subdirectory_from_path(path)
     
     # 计算缓存文件的结束点
-    # 如果filesize 不为 None，endPoint 为文件末尾（缓存尾部元数据）
+    # 如果 start_point 大于 cache_size，endPoint 为文件末尾（将缓存尾部元数据）
     if start_point <= cache_size:
         start_point = 0
         end_point = cache_size - 1
-    elif file_size is not None:
+    elif start_point > cache_size:
         end_point = file_size - 1
     else:
         logger.error(f"Cache Error {start_point}, File Size is None")
