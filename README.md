@@ -193,8 +193,8 @@ $ python3 main.py
 
 3. 排除所有 API 相关的请求
 
-<img width="842" alt="图片" src="https://github.com/zsbai/EmbyToAlist/assets/62942942/cba98bc0-5c12-457c-a290-6a740fa81b7c">
+![图片](https://github.com/user-attachments/assets/b661e6ae-e7b3-4be7-9c4f-7a86b02174ca)
 
-缓存策略设置为`Bypass`
+缓存策略设置为`Bypass`，字段均为`URI 路径`，使用 `URI` 会导致错误缓存剧集列表，导致不显示新入库剧集。
 
 缓存策略根据自己的喜欢设置，作为参考，我设置的 Edge TTL（在Cloudflare边缘节点上缓存时间）为6个月
