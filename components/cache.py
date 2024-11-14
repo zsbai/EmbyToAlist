@@ -8,7 +8,7 @@ import httpx
 from uvicorn.server import logger
 
 from components.utils import *
-from main import get_or_cache_alist_raw_url, FileInfo, RequestInfo
+from main import get_or_cache_alist_raw_url, FileInfo, RequestInfo, CacheStatus
 from typing import AsyncGenerator, Optional
 
 cache_locks = WeakValueDictionary()
@@ -63,6 +63,7 @@ async def write_cache_file(item_id, request_info: RequestInfo, req_header=None, 
     写入缓存文件，end point通过cache_size计算得出
     
     :param item_id: Emby Item ID
+    :param request_info: 请求信息
     :param req_header: 请求头，用于请求Alist Raw Url
     :param client: HTTPX异步客户端
     
@@ -74,14 +75,14 @@ async def write_cache_file(item_id, request_info: RequestInfo, req_header=None, 
     start_point = request_info.start_byte
     host_url = request_info.host_url
     
-    subdirname, dirname = get_hash_subdirectory_from_path(path)
+    subdirname, dirname = get_hash_subdirectory_from_path(path, request_info.file_info.type)
     
     # 计算缓存文件的结束点
     # 如果 start_point 大于 cache_size，endPoint 为文件末尾（将缓存尾部元数据）
-    if start_point <= cache_size:
+    if request_info.cache_status == CacheStatus.HIT or request_info.cache_status == CacheStatus.PARTIAL:
         start_point = 0
         end_point = cache_size - 1
-    elif start_point > cache_size:
+    elif request_info.cache_status == CacheStatus.HIT_TAIL:
         end_point = file_size - 1
     else:
         logger.error(f"Cache Error {start_point}, File Size is None")
@@ -156,46 +157,39 @@ async def write_cache_file(item_id, request_info: RequestInfo, req_header=None, 
             return False
 
     
-def read_cache_file(item_id, path, start_point=0, end_point=None):
+def read_cache_file(request_info: RequestInfo) -> AsyncGenerator[bytes, None]:
     """
     读取缓存文件，该函数不是异步的，将直接返回一个异步生成器
     
-    :param item_id: Emby Item ID
-    :param path: 文件路径
-    :param start_point: 缓存文件的起始点
-    :param end_point: 缓存文件的结束点
+    :param request_info: 请求信息
     
     :return: function read_file
-    """
-    subdirname, dirname = get_hash_subdirectory_from_path(path)
+    """    
+    subdirname, dirname = get_hash_subdirectory_from_path(request_info.file_info.path, request_info.file_info.type)
     file_dir = os.path.join(cache_path, subdirname, dirname)
     
     # 查找与 startPoint 匹配的缓存文件，endPoint 为文件名的一部分
     for file in os.listdir(file_dir):
-            
         if file.startswith('cache_file_') and file.endswith('.tag') is False:
             range_start, range_end = map(int, file.split('_')[2:4])
-            if range_start <= start_point <= range_end:
+            if range_start <= request_info.start_byte <= range_end:
                 # 调整 end_point 的值
-                adjusted_end_point = None if end_point is None or end_point > range_end else end_point - start_point
+                adjusted_end_point = None if request_info.cache_status == CacheStatus.PARTIAL else request_info.end_byte - request_info.start_byte
                 
                 logger.info(f"Read Cache: {os.path.join(file_dir, file)}")
 
-                return read_file(os.path.join(file_dir, file), start_point-range_start, adjusted_end_point)
+                return read_file(os.path.join(file_dir, file), request_info.start_byte - range_start, adjusted_end_point)
             
-    logger.error(f"Read Cache Error: There is no matched cache file in the cache directory: {path}.")
+    logger.error(f"Read Cache Error: There is no matched cache in the cache directory for this file: {request_info.file_info.path}.")
     return None
 
-def get_cache_status(item_id, path, start_point=0) -> bool:
+def get_cache_status(request_info: RequestInfo) -> bool:
     """
     检查缓存文件是否存在
     
-    :param item_id: Emby Item ID
-    :param path: 文件路径
-    :param start_point: 缓存文件的起始点
-    :return: 缓存文件是否存在
+    :param request_info: 请求信息
     """
-    subdirname, dirname = get_hash_subdirectory_from_path(path)
+    subdirname, dirname = get_hash_subdirectory_from_path(request_info.file_info.path, request_info.file_info.type)
     cache_dir = os.path.join(cache_path, subdirname, dirname)
     
     if os.path.exists(cache_dir) is False:
@@ -212,8 +206,8 @@ def get_cache_status(item_id, path, start_point=0) -> bool:
     for file in os.listdir(cache_dir):
         if file.startswith('cache_file_'):
             range_start, range_end = map(int, file.split('_')[2:4])
-            if range_start <= start_point <= range_end:
+            if range_start <= request_info.start_byte <= range_end:
                 return True
     
-    logger.error(f"Get Cache Error: Cache file for range {start_point} not found.")
+    logger.error(f"Get Cache Error: Cache file for range {request_info.start_byte} not found.")
     return False

@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 from datetime import datetime
 from dataclasses import dataclass
+from enum import Enum
 
 import fastapi
 import httpx
@@ -23,6 +24,20 @@ app = fastapi.FastAPI(lifespan=lifespan)
 
 URL_CACHE = {}
 
+class CacheStatus(Enum):
+    """ 本地缓存状态 """
+    
+    HIT = "Hit"
+    """ 缓存完全命中 """
+    MISS = "Miss"
+    """ 缓存未命中 """
+    PARTIAL = "Partial"
+    """ 缓存部分命中，响应内容拓展至缓存外 """
+    HIT_TAIL = "Hit_Tail"
+    """ 缓存完全命中，且请求在文件末尾2MB内 """
+    UNKNOWN = "Unknown"
+    """ 未知状态 """
+
 @dataclass
 class FileInfo:
     # status: bool
@@ -30,6 +45,7 @@ class FileInfo:
     bitrate: int
     size: int
     container: str
+    type: str
     cache_file_size: int
     
 @dataclass
@@ -38,7 +54,7 @@ class RequestInfo:
     host_url: str
     start_byte: Optional[int] = None
     end_byte: Optional[int] = None
-    end_byte_exceeds_cache: Optional[bool] = None
+    cache_status: CacheStatus = CacheStatus.UNKNOWN
 
 # used to get the file info from emby server
 async def get_file_info(item_id, media_source_id, api_key, client: httpx.AsyncClient) -> FileInfo:
@@ -50,23 +66,30 @@ async def get_file_info(item_id, media_source_id, api_key, client: httpx.AsyncCl
     :param apiKey: Emby API Key
     :return: 包含文件信息的字典
     """
-    url = f"{emby_server}/emby/Items/{item_id}/PlaybackInfo?MediaSourceId={media_source_id}&api_key={api_key}"
-    logger.info(f"Requested Info URL: {url}")
+    media_info_api = f"{emby_server}/emby/Items/{item_id}/PlaybackInfo?MediaSourceId={media_source_id}&api_key={api_key}"
+    item_info_api = f"{emby_server}/emby/Items?api_key={api_key}&Ids={item_id}"
+    logger.info(f"Requested Info URL: {media_info_api}")
     try:
-        req = await client.get(url)
-        req.raise_for_status()
-        req = req.json()
+        media_info = await client.get(media_info_api)
+        item_info = await client.get(item_info_api)
+        media_info.raise_for_status()
+        media_info = media_info.json()
+        item_info.raise_for_status()
+        item_info = item_info.json()
     except Exception as e:
         logger.error(f"Error: failed to request Emby server, {e}")
         raise fastapi.HTTPException(status_code=500, detail=f"Failed to request Emby server, {e}")
     
-    for i in req['MediaSources']:
+    item_type = item_info['Items'][0]['Type'].lower()
+    if item_type != 'movie': item_type = 'episode'
+    for i in media_info['MediaSources']:
         if i['Id'] == media_source_id:
             return FileInfo(
                 path=i.get('Path', None),
                 bitrate=i.get('Bitrate', 27962026),
                 size=i.get('Size', 0),
                 container=i.get('Container', None),
+                type=item_type,
                 # 获取15秒的缓存文件大小， 并取整
                 cache_file_size=int(i.get('Bitrate', 27962026) / 8 * 15)
             )
@@ -124,11 +147,9 @@ async def request_handler(expected_status_code: int,
                           ) -> fastapi.Response:
     """决定反代还是重定向，创建alist缓存
     
-    :param status_code: 期望返回的状态码，302或206
+    :param expected_status_code: 期望返回的状态码，302或206
     :param cache: 内部缓存数据
-    :param file_path: alist文件路径
-    :param range: (start_byte, end_byte, local_cache_size) 请求的起始和结束字节，以及缓存大小
-    :param host_url: 请求头的host，用于alist直链
+    :param request_info: 请求信息
     :param resp_header: 需要返回的响应头
     :param client: httpx异步请求客户端
     
@@ -150,8 +171,9 @@ async def request_handler(expected_status_code: int,
         start_byte = request_info.start_byte
         end_byte = request_info.end_byte
         local_cache_size = request_info.file_info.cache_file_size
+        cache_status = request_info.cache_status
 
-        if start_byte >= local_cache_size:
+        if cache_status == CacheStatus.MISS:
             # Case 1: Requested range is entirely beyond the cache
             # Prepare Range header
             if end_byte is not None:
@@ -166,7 +188,7 @@ async def request_handler(expected_status_code: int,
                                            },
                                        response_headers=resp_header,
                                        client=client)
-        elif end_byte is not None and end_byte <= local_cache_size:
+        elif cache_status == CacheStatus.HIT or cache_status == CacheStatus.HIT_TAIL:
             # Case 2: Requested range is entirely within the cache
             return fastapi.responses.StreamingResponse(cache, headers=resp_header, status_code=206)
         else:
@@ -245,7 +267,6 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
     logger.debug("Request Range Header: " + range_header)
     request_info.start_byte = start_byte
     request_info.end_byte = end_byte
-    request_info.end_byte_exceeds_cache = end_byte is None or end_byte > file_info.cache_file_size
     
     if start_byte >= file_info.size:
         logger.warning("Requested Range is out of file size.")
@@ -255,13 +276,17 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
     
     # 应该走缓存的情况1：请求文件开头
     if start_byte < cache_file_size:
-        
+        if end_byte is None or end_byte > cache_file_size:
+            request_info.cache_status = CacheStatus.PARTIAL
+        else:
+            request_info.cache_status = CacheStatus.HIT
+            
         # 如果请求末尾在cache范围内
         # 如果请求末尾在缓存文件大小之外，取缓存文件大小；否则取请求末尾
-        cache_end_byte = cache_file_size if end_byte is None or end_byte > cache_file_size else end_byte
+        cache_end_byte = cache_file_size if request_info.cache_status == CacheStatus.PARTIAL else end_byte
         resp_end_byte = file_info.size - 1 if end_byte is None or end_byte > cache_end_byte else cache_end_byte
         
-        if get_cache_status(item_id, alist_path, start_byte):
+        if get_cache_status(request_info):
             
             resp_headers = {
                 'Content-Type': get_content_type(file_info.container),
@@ -275,7 +300,7 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
             logger.info("Cached file exists and is valid")
             # 返回缓存内容和调整后的响应头
             
-            return await request_handler(expected_status_code=206, cache=read_cache_file(item_id, alist_path, start_byte, cache_end_byte), request_info=request_info, resp_header=resp_headers, client=app.requests_client)
+            return await request_handler(expected_status_code=206, cache=read_cache_file(request_info), request_info=request_info, resp_header=resp_headers, client=app.requests_client)
         else:
             # 后台任务缓存文件
             background_tasks.add_task(write_cache_file, item_id, request_info, request.headers, client=app.requests_client)
@@ -286,7 +311,9 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
      
     # 应该走缓存的情况2：请求文件末尾
     elif file_info.size - start_byte < 2 * 1024 * 1024:
-        if get_cache_status(item_id, path=alist_path, start_point=start_byte):
+        request_info.cache_status = CacheStatus.HIT_TAIL
+        
+        if get_cache_status(request_info):
             if end_byte is None:
                 resp_end_byte = file_info.size - 1
                 resp_file_size = (resp_end_byte + 1) - start_byte
@@ -307,7 +334,7 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
             # 返回缓存内容和调整后的响应头
             logger.debug("Response Range Header: " + f"bytes {start_byte}-{resp_end_byte}/{file_info.size}")
             logger.debug("Response Content-Length: " + f'{resp_file_size}')
-            return fastapi.responses.StreamingResponse(read_cache_file(item_id=item_id, path=alist_path, start_point=start_byte, end_point=end_byte), headers=resp_headers, status_code=206)
+            return fastapi.responses.StreamingResponse(read_cache_file(request_info), headers=resp_headers, status_code=206)
         else:
             # 后台任务缓存文件
             background_tasks.add_task(write_cache_file, item_id=item_id, request_info=request_info, req_header=request.headers, client=app.requests_client)
@@ -316,6 +343,7 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
             # 重定向到原始URL
             return await request_handler(expected_status_code=302, request_info=request_info, client=app.requests_client)
     else:
+        request_info.cache_status = CacheStatus.MISS
         
         resp_headers = {
             'Content-Type': get_content_type(file_info.container),

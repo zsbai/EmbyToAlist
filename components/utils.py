@@ -1,7 +1,6 @@
 import hashlib
 import os
 import re
-from datetime import datetime
 
 import fastapi
 import httpx
@@ -37,20 +36,21 @@ def get_content_type(container) -> str:
     # 返回对应的Content-Type，如果未找到，返回一个默认值
     return content_types.get(container.lower(), 'application/octet-stream')
 
-def get_hash_subdirectory_from_path(file_path) -> tuple:
+def get_hash_subdirectory_from_path(file_path, media_type) -> tuple:
     """
     计算给定文件路径的MD5哈希，并返回哈希值的前两位作为子目录名称。
     电影：只计算视频文件本身的上层文件夹路径
     电视剧：计算视频文件本身的上两层文件夹路径
 
     :param file_path: 文件的路径
+    :param media_type: 媒体类型，电影或剧集
+    
     :return: 哈希值的前两个字符，作为子目录名称
     """
-    match = re.search(r'S\d\dE\d\d', file_path, re.IGNORECASE)
     parts = file_path.split('/')
     # 剧集
     # Example: /mnt/TV/Name/Season 01/Name - S01E01 - Episode Name.mp4 -> Name/Season 01/Name - S01E01 - Episode Name.mp4
-    if match:        
+    if media_type != 'movie':        
         file_path: str = os.path.join("series", os.path.join(parts[-3], parts[-2], parts[-1]))
     # 电影
     # Example: /mnt/Movies/Name (Year)/Name (Year).mp4 -> Name (Year)/Name (Year).mp4
@@ -107,7 +107,7 @@ def transform_file_path(file_path, mount_path_prefix_remove=mount_path_prefix_re
 
 def extract_api_key(request: fastapi.Request):
     """从请求中提取API密钥"""
-    api_key = request.query_params.get('api_key')
+    api_key = request.query_params.get('api_key') or request.query_params.get('X-Emby-Token')
     if not api_key:
         auth_header = request.headers.get('X-Emby-Authorization')
         if auth_header:
