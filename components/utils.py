@@ -1,6 +1,7 @@
 import hashlib
 import os
 import re
+import urllib.parse
 
 import fastapi
 import httpx
@@ -116,7 +117,7 @@ def extract_api_key(request: fastapi.Request):
                 api_key = match_token.group(1)
     return api_key or emby_key
 
-async def get_alist_raw_url(file_path, host_url, client: httpx.AsyncClient) -> Tuple[str, int]:
+async def get_alist_raw_url(file_path, host_url, client: httpx.AsyncClient) -> str:
     """根据文件路径获取Alist Raw Url"""
     
     alist_api_url = f"{alist_server}/api/fs/get"
@@ -147,15 +148,16 @@ async def get_alist_raw_url(file_path, host_url, client: httpx.AsyncClient) -> T
             for path, url in alist_download_url_replacement_map.items():
                 if file_path.startswith(path):
                     if isinstance(url, list):
-                        host = re.search(r'(?<=://)[^/]+', host_url).group(0)
-                        host_domain = ".".join(host.split('.')[-2:])
+                        hostname = urllib.parse.urlparse(host_url).hostname
+
                         for u in url:
-                            if host_domain in u:
+                            if hostname in u:
                                 url = u
                                 break
                         else:
                             # 都不匹配选第一个
                             url = url[0]
+                    # 如果URL中包含{host_url}，则替换为host_url
                     elif host_url is not None and "{host_url}" in url:
                         url = url.replace("{host_url}/", host_url)
                     
@@ -165,14 +167,16 @@ async def get_alist_raw_url(file_path, host_url, client: httpx.AsyncClient) -> T
                     # 替换原始URL为反向代理URL
                     raw_url = re.sub(r'https?:\/\/[^\/]+\/', url, raw_url)
         
-        return 200, raw_url
+        return raw_url
                
     elif code == 403:
         logger.error("Alist server response 403 Forbidden, Please check your Alist Key")
-        return 403, '403 Forbidden, Please check your Alist Key'
+        # return 403, '403 Forbidden, Please check your Alist Key'
+        raise fastapi.HTTPException(status_code=500, detail="Alist return 403 Forbidden, Please check your Alist Key")
     else:
         logger.error(f"Error: {req['message']}")
-        return 500, req['message']        
+        # return 500, req['message']        
+        raise fastapi.HTTPException(status_code=500, detail="Alist Server Error")
 
 async def reverse_proxy(cache: AsyncGenerator[bytes, None],
                         url_task: str,
@@ -197,9 +201,8 @@ async def reverse_proxy(cache: AsyncGenerator[bytes, None],
                 async for chunk in cache:
                     yield chunk
                 logger.info("Cache exhausted, streaming from source")
-            code, raw_url = await url_task
-            if code != 200:
-                raise ValueError(f"Error: get_alist_raw_url failed, {raw_url}")
+            raw_url = await url_task
+            
             request_header['host'] = raw_url.split('/')[2]
             async with client.stream("GET", raw_url, headers=request_header) as response:
                 response.raise_for_status()

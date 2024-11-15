@@ -98,7 +98,7 @@ async def get_file_info(item_id, media_source_id, api_key, client: httpx.AsyncCl
     
 # return Alist Raw Url
 @get_time
-async def get_or_cache_alist_raw_url(file_path, host_url, client=httpx.AsyncClient) -> Tuple[int, str]:
+async def get_or_cache_alist_raw_url(file_path, host_url, client=httpx.AsyncClient) -> str:
     """创建或获取Alist Raw Url缓存，缓存时间为5分钟"""
     cache_key = file_path + host_url
     if cache_key in URL_CACHE.keys():
@@ -111,22 +111,15 @@ async def get_or_cache_alist_raw_url(file_path, host_url, client=httpx.AsyncClie
             logger.debug("Alist Raw URL Cache is expired, re-fetching...")
             del URL_CACHE[cache_key]
     
-    code, raw_url = await get_alist_raw_url(file_path, host_url=host_url, client=client)
-    
-    if code == 200:
-        URL_CACHE[cache_key] = {
-            'url': raw_url,
-            'time': datetime.now().timestamp()
-            }
-        # print("Redirected Url: " + raw_url)
-        logger.info("Redirected Url: " + raw_url)
-        return code, raw_url
-    else:
-        # print(f"Error: failed to get Alist Raw Url, {code}")
-        # print(f"{raw_url}")
-        logger.error(f"Error: failed to get Alist Raw Url, Status Code: {code}")
-        logger.error(f"Detailed Error: {raw_url}")
-        return code, raw_url
+    raw_url = await get_alist_raw_url(file_path, host_url=host_url, client=client)
+
+    URL_CACHE[cache_key] = {
+        'url': raw_url,
+        'time': datetime.now().timestamp()
+        }
+    # print("Redirected Url: " + raw_url)
+    logger.info("Redirected Url: " + raw_url)
+    return raw_url
 
 # 可以在第一个请求到达时就异步创建alist缓存
 # 重定向：
@@ -161,9 +154,7 @@ async def request_handler(expected_status_code: int,
     alist_raw_url = asyncio.create_task(get_or_cache_alist_raw_url(file_path=file_path, host_url=host_url, client=client))
     
     if expected_status_code == 302:
-        code, raw_url = await alist_raw_url
-        if code != 200:
-            raise fastapi.HTTPException(status_code=500, detail=f"Get Alist Raw Url Error: {raw_url};\nCode: {code}")
+        raw_url = await alist_raw_url
         return fastapi.responses.RedirectResponse(url=raw_url, status_code=302)
     
     if expected_status_code == 206:

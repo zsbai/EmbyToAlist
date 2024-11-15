@@ -89,10 +89,7 @@ async def write_cache_file(item_id, request_info: RequestInfo, req_header=None, 
         return
     
     # 获取Alist Raw Url
-    code, raw_url = await get_or_cache_alist_raw_url(path, host_url, client)
-    if code != 200:
-        logger.error(f"Cache Error {start_point}-{end_point}, Alist Return: code: {code} and details: {raw_url}")
-        return False
+    raw_url = await get_or_cache_alist_raw_url(path, host_url, client)
     
     # 根据起始点和缓存大小确定缓存文件路径
     cache_file_name = f'cache_file_{start_point}_{end_point}'
