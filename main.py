@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
 from datetime import datetime
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 
 import fastapi
 import httpx
@@ -24,7 +24,7 @@ app = fastapi.FastAPI(lifespan=lifespan)
 
 URL_CACHE = {}
 
-class CacheStatus(Enum):
+class CacheStatus(StrEnum):
     """ 本地缓存状态 """
     
     HIT = "Hit"
@@ -106,7 +106,7 @@ async def get_or_cache_alist_raw_url(file_path, host_url, client=httpx.AsyncClie
         if now_time - URL_CACHE[cache_key]['time'] < 300:
             logger.debug("Alist Raw URL Cache exists and is valid (less than 5 minutes)")
             logger.info("Redirected Url: " + URL_CACHE[cache_key]['url'])
-            return 200, URL_CACHE[cache_key]['url']
+            return URL_CACHE[cache_key]['url']
         else:
             logger.debug("Alist Raw URL Cache is expired, re-fetching...")
             del URL_CACHE[cache_key]

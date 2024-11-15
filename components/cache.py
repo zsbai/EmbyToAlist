@@ -171,7 +171,7 @@ def read_cache_file(request_info: RequestInfo) -> AsyncGenerator[bytes, None]:
             range_start, range_end = map(int, file.split('_')[2:4])
             if range_start <= request_info.start_byte <= range_end:
                 # 调整 end_point 的值
-                adjusted_end_point = None if request_info.cache_status == CacheStatus.PARTIAL else request_info.end_byte - request_info.start_byte
+                adjusted_end_point = None if request_info.cache_status == CacheStatus.PARTIAL or request_info.cache_status == CacheStatus.HIT_TAIL else request_info.end_byte - request_info.start_byte
                 
                 logger.info(f"Read Cache: {os.path.join(file_dir, file)}")
 
