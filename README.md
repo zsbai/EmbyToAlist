@@ -25,6 +25,8 @@
 
 # 部署方式
 
+## 1. 直接部署
+
 ```
 # 克隆项目到本地
 $ git clone git@github.com:zsbai/EmbyToAlist.git && cd EmbyToAlist
@@ -34,6 +36,37 @@ $ pip install -r requirements.txt
 $ cp config.example.py config.py
 # 运行 main.py 启动
 $ python3 main.py
+```
+
+## 2. 通过docker compose部署
+```
+# 获取docker-compose.yml文件 和 配置文件
+$ wget https://raw.githubusercontent.com/zsbai/EmbyToAlist/refs/heads/main/docker-compose.yml -O docker-compose.yml && wget https://raw.githubusercontent.com/zsbai/EmbyToAlist/refs/heads/main/config.example.py -O config.py
+# 配置 docker-compose.yml 中的路径网络
+# 启动
+$ docker compose up -d
+# 更新
+$ docker compose pull && docker compose up -d
+# 删除
+$ docker compose down
+# 查看日志
+$ docker compose logs
+```
+
+示例 docker-compose.yml 文件：
+```
+services:
+  embytoalist:
+    image: ghcr.io/zsbai/embytoalist:latest
+    volumes:
+      - ./config.py:/app/config.py
+      - /path/to/cache_dir:/path/to/cache_dir
+    # host和port二选一，设置为host可以直接通过 127.0.0.1 访问宿主机上的alist和emby服务
+    # 设置为port需要使用docker网关访问宿主机
+    network_mode: host
+    # ports:
+    #   - 127.0.0.1:60001:60001
+    restart: unless-stopped
 ```
 
 启动服务器后，需要配置 Nginx，将播放路径反向代理到本地`60001`端口。

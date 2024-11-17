@@ -117,7 +117,6 @@ async def get_or_cache_alist_raw_url(file_path, host_url, client=httpx.AsyncClie
         'url': raw_url,
         'time': datetime.now().timestamp()
         }
-    # print("Redirected Url: " + raw_url)
     logger.info("Redirected Url: " + raw_url)
     return raw_url
 
