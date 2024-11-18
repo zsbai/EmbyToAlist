@@ -74,7 +74,7 @@ async def write_cache_file(item_id, request_info: RequestInfo, req_header=None, 
     cache_size = request_info.file_info.cache_file_size
     host_url = request_info.host_url
     
-    subdirname, dirname = get_hash_subdirectory_from_path(path, request_info.file_info.type)
+    subdirname, dirname = get_hash_subdirectory_from_path(path, request_info.item_info.item_type)
     
     # 计算缓存文件的结束点
     # 如果 start_point 大于 cache_size，endPoint 为文件末尾（将缓存尾部元数据）
@@ -165,7 +165,7 @@ def read_cache_file(request_info: RequestInfo) -> AsyncGenerator[bytes, None]:
     
     :return: function read_file
     """    
-    subdirname, dirname = get_hash_subdirectory_from_path(request_info.file_info.path, request_info.file_info.type)
+    subdirname, dirname = get_hash_subdirectory_from_path(request_info.file_info.path, request_info.item_info.item_type)
     file_dir = os.path.join(cache_path, subdirname, dirname)
     
     # 查找与 startPoint 匹配的缓存文件，endPoint 为文件名的一部分
@@ -189,7 +189,7 @@ def get_cache_status(request_info: RequestInfo) -> bool:
     
     :param request_info: 请求信息
     """
-    subdirname, dirname = get_hash_subdirectory_from_path(request_info.file_info.path, request_info.file_info.type)
+    subdirname, dirname = get_hash_subdirectory_from_path(request_info.file_info.path, request_info.item_info.item_type)
     cache_dir = os.path.join(cache_path, subdirname, dirname)
     
     if os.path.exists(cache_dir) is False:
@@ -211,3 +211,12 @@ def get_cache_status(request_info: RequestInfo) -> bool:
     
     logger.error(f"Get Cache Error: Cache file for range {request_info.start_byte} not found.")
     return False
+
+def cache_next_episode(request_info: RequestInfo, client: httpx.AsyncClient) -> bool:
+    """
+    缓存下一集
+    
+    :param request_info: 请求信息
+    :param client: HTTPX异步客户端
+    """
+    pass

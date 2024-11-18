@@ -11,7 +11,7 @@ from uvicorn.server import logger
 from config import *
 from components.utils import *
 from components.cache import *
-from typing import Tuple, Optional
+from components.models import *
 
 # 使用上下文管理器，创建异步请求客户端
 @asynccontextmanager
@@ -24,42 +24,8 @@ app = fastapi.FastAPI(lifespan=lifespan)
 
 URL_CACHE = {}
 
-class CacheStatus(StrEnum):
-    """ 本地缓存状态 """
-    
-    HIT = "Hit"
-    """ 缓存完全命中 """
-    MISS = "Miss"
-    """ 缓存未命中 """
-    PARTIAL = "Partial"
-    """ 缓存部分命中，响应内容拓展至缓存外 """
-    HIT_TAIL = "Hit_Tail"
-    """ 缓存完全命中，且请求在文件末尾2MB内 """
-    UNKNOWN = "Unknown"
-    """ 未知状态 """
-
-@dataclass
-class FileInfo:
-    # status: bool
-    path: str
-    bitrate: int
-    size: int
-    container: str
-    type: str
-    cache_file_size: int
-    
-@dataclass
-class RequestInfo:
-    file_info: FileInfo
-    host_url: str
-    start_byte: Optional[int] = None
-    end_byte: Optional[int] = None
-    cache_status: CacheStatus = CacheStatus.UNKNOWN
-    raw_url: Optional[str] = None
-    raw_url_task: Optional[asyncio.Task[str]] = None
-
 # used to get the file info from emby server
-async def get_file_info(item_id, media_source_id, api_key, client: httpx.AsyncClient) -> FileInfo:
+async def get_file_info(item_id, api_key, media_source_id, client: httpx.AsyncClient) -> FileInfo:
     """
     从Emby服务器获取文件信息
     
@@ -69,21 +35,15 @@ async def get_file_info(item_id, media_source_id, api_key, client: httpx.AsyncCl
     :return: 包含文件信息的字典
     """
     media_info_api = f"{emby_server}/emby/Items/{item_id}/PlaybackInfo?MediaSourceId={media_source_id}&api_key={api_key}"
-    item_info_api = f"{emby_server}/emby/Items?api_key={api_key}&Ids={item_id}"
     logger.info(f"Requested Info URL: {media_info_api}")
     try:
         media_info = await client.get(media_info_api)
-        item_info = await client.get(item_info_api)
         media_info.raise_for_status()
         media_info = media_info.json()
-        item_info.raise_for_status()
-        item_info = item_info.json()
     except Exception as e:
         logger.error(f"Error: failed to request Emby server, {e}")
         raise fastapi.HTTPException(status_code=500, detail=f"Failed to request Emby server, {e}")
-    
-    item_type = item_info['Items'][0]['Type'].lower()
-    if item_type != 'movie': item_type = 'episode'
+
     for i in media_info['MediaSources']:
         if i['Id'] == media_source_id:
             return FileInfo(
@@ -91,7 +51,6 @@ async def get_file_info(item_id, media_source_id, api_key, client: httpx.AsyncCl
                 bitrate=i.get('Bitrate', 27962026),
                 size=i.get('Size', 0),
                 container=i.get('Container', None),
-                type=item_type,
                 # 获取15秒的缓存文件大小， 并取整
                 cache_file_size=int(i.get('Bitrate', 27962026) / 8 * 15)
             )
@@ -217,10 +176,11 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
     if not media_source_id:
         raise fastapi.HTTPException(status_code=400, detail="MediaSourceId is required")
 
-    file_info: FileInfo = await get_file_info(item_id, media_source_id, api_key, client=app.requests_client)
+    file_info: FileInfo = await get_file_info(item_id, api_key, media_source_id, client=app.requests_client)
+    item_info: ItemInfo = get_item_info(item_id, api_key, client=app.requests_client)
     # host_url example: https://emby.example.com:8096/
     host_url = str(request.base_url)
-    request_info = RequestInfo(file_info=file_info, host_url=host_url)
+    request_info = RequestInfo(file_info=file_info, item_info=item_info, host_url=host_url)
     
     logger.info(f"Requested Item ID: {item_id}")
     logger.info("MediaFile Mount Path: " + file_info.path)

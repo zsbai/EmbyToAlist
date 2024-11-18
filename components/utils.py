@@ -8,6 +8,7 @@ import httpx
 from uvicorn.server import logger
 
 from config import *
+from components.models import *
 from typing import AsyncGenerator, Tuple
 
 # a wrapper function to get the time of the function
@@ -177,6 +178,26 @@ async def get_alist_raw_url(file_path, host_url, client: httpx.AsyncClient) -> s
         logger.error(f"Error: {req['message']}")
         # return 500, req['message']        
         raise fastapi.HTTPException(status_code=500, detail="Alist Server Error")
+    
+def get_item_info(item_id, api_key, client) -> ItemInfo:
+    item_info_api = f"{emby_server}/emby/Items?api_key={api_key}&Ids={item_id}"
+    logger.debug(f"Requesting Item Info: {item_info_api}")
+    try:
+        req = client.get(item_info_api)
+        req.raise_for_status()
+        req = req.json()
+    except Exception as e:
+        logger.error(f"Error: get_item_info failed, {e}")
+        raise fastapi.HTTPException(status_code=500, detail="Failed to request Emby server, {e}")
+    
+    item_type = req['Items'][0]['Type'].lower()
+    if item_type != 'movie': item_type = 'episode'
+
+    return ItemInfo(
+        item_id=item_id,
+        item_type=item_type,
+        season_id=req['Items'][0]['SeasonId']
+    )
 
 async def reverse_proxy(cache: AsyncGenerator[bytes, None],
                         url_task: str,
