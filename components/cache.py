@@ -72,24 +72,27 @@ async def write_cache_file(item_id, request_info: RequestInfo, req_header=None, 
     path = request_info.file_info.path
     file_size = request_info.file_info.size
     cache_size = request_info.file_info.cache_file_size
-    start_point = request_info.start_byte
     host_url = request_info.host_url
     
     subdirname, dirname = get_hash_subdirectory_from_path(path, request_info.file_info.type)
     
     # 计算缓存文件的结束点
     # 如果 start_point 大于 cache_size，endPoint 为文件末尾（将缓存尾部元数据）
-    if request_info.cache_status == CacheStatus.HIT or request_info.cache_status == CacheStatus.PARTIAL:
+    if request_info.cache_status in {CacheStatus.PARTIAL, CacheStatus.HIT_TAIL}:
         start_point = 0
         end_point = cache_size - 1
     elif request_info.cache_status == CacheStatus.HIT_TAIL:
+        start_point = request_info.start_byte
         end_point = file_size - 1
     else:
         logger.error(f"Cache Error {start_point}, File Size is None")
         return
     
     # 获取Alist Raw Url
-    raw_url = await get_or_cache_alist_raw_url(path, host_url, client)
+    if request_info.raw_url is None:
+        raw_url = await request_info.raw_url_task
+    else:
+        raw_url = request_info.raw_url
     
     # 根据起始点和缓存大小确定缓存文件路径
     cache_file_name = f'cache_file_{start_point}_{end_point}'

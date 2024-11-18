@@ -55,6 +55,8 @@ class RequestInfo:
     start_byte: Optional[int] = None
     end_byte: Optional[int] = None
     cache_status: CacheStatus = CacheStatus.UNKNOWN
+    raw_url: Optional[str] = None
+    raw_url_task: Optional[asyncio.Task[str]] = None
 
 # used to get the file info from emby server
 async def get_file_info(item_id, media_source_id, api_key, client: httpx.AsyncClient) -> FileInfo:
@@ -147,13 +149,10 @@ async def request_handler(expected_status_code: int,
     
     :return fastapi.Response: 返回重定向或反代的响应
     """
-    host_url = request_info.host_url
-    file_path = request_info.file_info.path
-    # 如果满足alist直链条件，提前通过异步缓存alist直链
-    alist_raw_url = asyncio.create_task(get_or_cache_alist_raw_url(file_path=file_path, host_url=host_url, client=client))
-    
+    alist_raw_url_task = request_info.raw_url_task
+
     if expected_status_code == 302:
-        raw_url = await alist_raw_url
+        raw_url = await alist_raw_url_task
         return fastapi.responses.RedirectResponse(url=raw_url, status_code=302)
     
     if expected_status_code == 206:
@@ -172,7 +171,7 @@ async def request_handler(expected_status_code: int,
                 source_range_header = f"bytes={start_byte}-"
 
             return await reverse_proxy(cache=None, 
-                                       url_task=alist_raw_url, 
+                                       url_task=alist_raw_url_task, 
                                        request_header={
                                            "Range": source_range_header
                                            },
@@ -192,7 +191,7 @@ async def request_handler(expected_status_code: int,
                 source_range_header = f"bytes={source_start}-"
             
             return await reverse_proxy(cache=cache, 
-                                       url_task=alist_raw_url, 
+                                       url_task=alist_raw_url_task, 
                                        request_header={
                                            "Range": source_range_header                                           },
                                        response_headers=resp_header,
@@ -235,6 +234,9 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
     
     alist_path = transform_file_path(file_info.path)
     file_info.path = alist_path
+    
+    # 如果满足alist直链条件，提前通过异步缓存alist直链
+    request_info.raw_url_task = asyncio.create_task(get_or_cache_alist_raw_url(file_path=file_info.path, host_url=host_url, client=app.requests_client))
     
     # 如果没有启用缓存，直接返回Alist Raw Url
     if not enable_cache:
