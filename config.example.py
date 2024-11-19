@@ -40,6 +40,7 @@ mount_path_prefix_add = ""
 
 # 是否缓存视频前15秒用于起播加速
 enable_cache = False
+enable_cache_next_episode = False
 cache_path = "/app/cache"
 
 log_level = "INFO"

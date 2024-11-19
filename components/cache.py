@@ -212,11 +212,24 @@ def get_cache_status(request_info: RequestInfo) -> bool:
     logger.error(f"Get Cache Error: Cache file for range {request_info.start_byte} not found.")
     return False
 
-def cache_next_episode(request_info: RequestInfo, client: httpx.AsyncClient) -> bool:
+async def cache_next_episode(request_info: RequestInfo, api_key: str, client: httpx.AsyncClient) -> bool:
     """
     缓存下一集
     
     :param request_info: 请求信息
     :param client: HTTPX异步客户端
     """
-    pass
+    next_episode_id = request_info.item_info.item_id + 1
+    next_item_info = await get_item_info(next_episode_id, api_key, client)
+    if next_item_info.item_type == 'episode' and next_item_info.season_id == request_info.item_info.season_id:
+        next_file_info = await get_file_info(next_item_info.item_id, api_key, client)
+        next_request_info = RequestInfo(
+            file_info=next_file_info,
+            item_info=next_item_info,
+            host_url=request_info.host_url,
+            start_byte=0,
+            end_byte=None,
+            cache_status=CacheStatus.UNKNOWN
+        )
+        await write_cache_file(next_episode_id, next_request_info, client=client)
+        return True

@@ -179,11 +179,58 @@ async def get_alist_raw_url(file_path, host_url, client: httpx.AsyncClient) -> s
         # return 500, req['message']        
         raise fastapi.HTTPException(status_code=500, detail="Alist Server Error")
     
-def get_item_info(item_id, api_key, client) -> ItemInfo:
+# used to get the file info from emby server
+async def get_file_info(item_id, api_key, media_source_id, client: httpx.AsyncClient) -> FileInfo:
+    """
+    从Emby服务器获取文件信息
+    
+    :param item_id: Emby Item ID
+    :param MediaSourceId: Emby MediaSource ID
+    :param apiKey: Emby API Key
+    :return: 包含文件信息的字典
+    """
+    media_info_api = f"{emby_server}/emby/Items/{item_id}/PlaybackInfo?MediaSourceId={media_source_id}&api_key={api_key}"
+    logger.info(f"Requested Info URL: {media_info_api}")
+    try:
+        media_info = await client.get(media_info_api)
+        media_info.raise_for_status()
+        media_info = media_info.json()
+    except Exception as e:
+        logger.error(f"Error: failed to request Emby server, {e}")
+        raise fastapi.HTTPException(status_code=500, detail=f"Failed to request Emby server, {e}")
+
+    if media_source_id is None:
+        all_source = []
+        for i in media_info['MediaSources']:
+            all_source.append(FileInfo(
+                path=i.get('Path', None),
+                bitrate=i.get('Bitrate', 27962026),
+                size=i.get('Size', 0),
+                container=i.get('Container', None),
+                # 获取15秒的缓存文件大小， 并取整
+                cache_file_size=int(i.get('Bitrate', 27962026) / 8 * 15)
+            ))
+        return all_source
+
+    for i in media_info['MediaSources']:
+        if i['Id'] == media_source_id:
+            return FileInfo(
+                path=i.get('Path', None),
+                bitrate=i.get('Bitrate', 27962026),
+                size=i.get('Size', 0),
+                container=i.get('Container', None),
+                # 获取15秒的缓存文件大小， 并取整
+                cache_file_size=int(i.get('Bitrate', 27962026) / 8 * 15)
+            )
+    # can't find the matched MediaSourceId in MediaSources
+    raise fastapi.HTTPException(status_code=500, detail="Can't match MediaSourceId")
+    
+
+async def get_item_info(item_id, api_key, client) -> ItemInfo:
     item_info_api = f"{emby_server}/emby/Items?api_key={api_key}&Ids={item_id}"
     logger.debug(f"Requesting Item Info: {item_info_api}")
     try:
-        req = client.get(item_info_api)
+        req = await client.get(item_info_api)
         req.raise_for_status()
         req = req.json()
     except Exception as e:

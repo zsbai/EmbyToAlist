@@ -24,39 +24,6 @@ app = fastapi.FastAPI(lifespan=lifespan)
 
 URL_CACHE = {}
 
-# used to get the file info from emby server
-async def get_file_info(item_id, api_key, media_source_id, client: httpx.AsyncClient) -> FileInfo:
-    """
-    从Emby服务器获取文件信息
-    
-    :param item_id: Emby Item ID
-    :param MediaSourceId: Emby MediaSource ID
-    :param apiKey: Emby API Key
-    :return: 包含文件信息的字典
-    """
-    media_info_api = f"{emby_server}/emby/Items/{item_id}/PlaybackInfo?MediaSourceId={media_source_id}&api_key={api_key}"
-    logger.info(f"Requested Info URL: {media_info_api}")
-    try:
-        media_info = await client.get(media_info_api)
-        media_info.raise_for_status()
-        media_info = media_info.json()
-    except Exception as e:
-        logger.error(f"Error: failed to request Emby server, {e}")
-        raise fastapi.HTTPException(status_code=500, detail=f"Failed to request Emby server, {e}")
-
-    for i in media_info['MediaSources']:
-        if i['Id'] == media_source_id:
-            return FileInfo(
-                path=i.get('Path', None),
-                bitrate=i.get('Bitrate', 27962026),
-                size=i.get('Size', 0),
-                container=i.get('Container', None),
-                # 获取15秒的缓存文件大小， 并取整
-                cache_file_size=int(i.get('Bitrate', 27962026) / 8 * 15)
-            )
-    # can't find the matched MediaSourceId in MediaSources
-    raise fastapi.HTTPException(status_code=500, detail="Can't match MediaSourceId")
-    
 # return Alist Raw Url
 @get_time
 async def get_or_cache_alist_raw_url(file_path, host_url, client=httpx.AsyncClient) -> str:
@@ -96,6 +63,7 @@ async def request_handler(expected_status_code: int,
                           cache: AsyncGenerator[bytes, None]=None,
                           request_info: RequestInfo=None,
                           resp_header: dict=None,
+                          background_tasks: fastapi.BackgroundTasks=None,
                           client: httpx.AsyncClient=None
                           ) -> fastapi.Response:
     """决定反代还是重定向，创建alist缓存
@@ -108,6 +76,11 @@ async def request_handler(expected_status_code: int,
     
     :return fastapi.Response: 返回重定向或反代的响应
     """
+    
+    if request_info.cache_status != CacheStatus.UNKNOWN and enable_cache_next_episode is True:
+        background_tasks.add_task(cache_next_episode, request_info=request_info, api_key=request_info.api_key, client=client)
+        logger.info("Started background task to cache next episode.")
+        
     alist_raw_url_task = request_info.raw_url_task
 
     if expected_status_code == 302:
@@ -177,10 +150,10 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
         raise fastapi.HTTPException(status_code=400, detail="MediaSourceId is required")
 
     file_info: FileInfo = await get_file_info(item_id, api_key, media_source_id, client=app.requests_client)
-    item_info: ItemInfo = get_item_info(item_id, api_key, client=app.requests_client)
+    item_info: ItemInfo = await get_item_info(item_id, api_key, client=app.requests_client)
     # host_url example: https://emby.example.com:8096/
     host_url = str(request.base_url)
-    request_info = RequestInfo(file_info=file_info, item_info=item_info, host_url=host_url)
+    request_info = RequestInfo(file_info=file_info, item_info=item_info, host_url=host_url, api_key=api_key)
     
     logger.info(f"Requested Item ID: {item_id}")
     logger.info("MediaFile Mount Path: " + file_info.path)
@@ -252,14 +225,14 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
             logger.info("Cached file exists and is valid")
             # 返回缓存内容和调整后的响应头
             
-            return await request_handler(expected_status_code=206, cache=read_cache_file(request_info), request_info=request_info, resp_header=resp_headers, client=app.requests_client)
+            return await request_handler(expected_status_code=206, cache=read_cache_file(request_info), request_info=request_info, resp_header=resp_headers, background_tasks=background_tasks, client=app.requests_client)
         else:
             # 后台任务缓存文件
             background_tasks.add_task(write_cache_file, item_id, request_info, request.headers, client=app.requests_client)
             logger.info("Started background task to write cache file.")
 
             # 重定向到原始URL
-            return await request_handler(expected_status_code=302, request_info=request_info, client=app.requests_client)
+            return await request_handler(expected_status_code=302, request_info=request_info, background_tasks=background_tasks, client=app.requests_client)
      
     # 应该走缓存的情况2：请求文件末尾
     elif file_info.size - start_byte < 2 * 1024 * 1024:
@@ -293,7 +266,7 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
             logger.info("Started background task to write cache file.")
 
             # 重定向到原始URL
-            return await request_handler(expected_status_code=302, request_info=request_info, client=app.requests_client)
+            return await request_handler(expected_status_code=302, request_info=request_info, background_tasks=background_tasks, client=app.requests_client)
     else:
         request_info.cache_status = CacheStatus.MISS
         
@@ -307,7 +280,7 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
         }
         
         # 这里用206是因为响应302后vlc可能会出bug，不会跟随重定向，而是继续无限重复请求
-        return await request_handler(expected_status_code=206, request_info=request_info, resp_header=resp_headers, client=app.requests_client)
+        return await request_handler(expected_status_code=206, request_info=request_info, resp_header=resp_headers, background_tasks=background_tasks, client=app.requests_client)
 
 if __name__ == "__main__":
     try:

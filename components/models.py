@@ -40,5 +40,6 @@ class RequestInfo:
     start_byte: Optional[int] = None
     end_byte: Optional[int] = None
     cache_status: CacheStatus = CacheStatus.UNKNOWN
+    api_key: Optional[str] = None
     raw_url: Optional[str] = None
     raw_url_task: Optional[asyncio.Task[str]] = None
