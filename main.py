@@ -165,9 +165,6 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
         logger.info("Redirected Url: " + redirected_url)
         return fastapi.responses.RedirectResponse(url=redirected_url, status_code=302)
     
-    alist_path = transform_file_path(file_info.path)
-    file_info.path = alist_path
-    
     # 如果满足alist直链条件，提前通过异步缓存alist直链
     request_info.raw_url_task = asyncio.create_task(get_or_cache_alist_raw_url(file_path=file_info.path, host_url=host_url, client=app.requests_client))
     

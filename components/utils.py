@@ -203,7 +203,7 @@ async def get_file_info(item_id, api_key, media_source_id, client: httpx.AsyncCl
         all_source = []
         for i in media_info['MediaSources']:
             all_source.append(FileInfo(
-                path=i.get('Path', None),
+                path=transform_file_path(i.get('Path')),
                 bitrate=i.get('Bitrate', 27962026),
                 size=i.get('Size', 0),
                 container=i.get('Container', None),
@@ -215,7 +215,7 @@ async def get_file_info(item_id, api_key, media_source_id, client: httpx.AsyncCl
     for i in media_info['MediaSources']:
         if i['Id'] == media_source_id:
             return FileInfo(
-                path=i.get('Path', None),
+                path=transform_file_path(i.get('Path')),
                 bitrate=i.get('Bitrate', 27962026),
                 size=i.get('Size', 0),
                 container=i.get('Container', None),

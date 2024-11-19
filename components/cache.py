@@ -234,7 +234,9 @@ async def cache_next_episode(request_info: RequestInfo, api_key: str, client: ht
                 host_url=request_info.host_url,
                 start_byte=0,
                 end_byte=None,
-                cache_status=CacheStatus.PARTIAL
+                cache_status=CacheStatus.PARTIAL,
+                raw_url_task=asyncio.create_task(get_or_cache_alist_raw_url(file_path=file.path, host_url=request_info.host_url, client=client))
+
             )
             await write_cache_file(next_episode_id, next_request_info, client=client)
         return True
