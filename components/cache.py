@@ -77,7 +77,7 @@ async def write_cache_file(item_id, request_info: RequestInfo, req_header=None, 
     
     # 计算缓存文件的结束点
     # 如果 start_point 大于 cache_size，endPoint 为文件末尾（将缓存尾部元数据）
-    if request_info.cache_status in {CacheStatus.PARTIAL, CacheStatus.HIT_TAIL}:
+    if request_info.cache_status in {CacheStatus.PARTIAL, CacheStatus.HIT}:
         start_point = 0
         end_point = cache_size - 1
     elif request_info.cache_status == CacheStatus.HIT_TAIL:
