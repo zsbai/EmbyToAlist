@@ -239,11 +239,12 @@ async def get_item_info(item_id, api_key, client) -> ItemInfo:
     
     item_type = req['Items'][0]['Type'].lower()
     if item_type != 'movie': item_type = 'episode'
+    season_id = int(req['Items'][0]['SeasonId']) if item_type == 'episode' else None
 
     return ItemInfo(
-        item_id=item_id,
+        item_id=int(item_id),
         item_type=item_type,
-        season_id=req['Items'][0]['SeasonId']
+        season_id=season_id
     )
 
 async def reverse_proxy(cache: AsyncGenerator[bytes, None],

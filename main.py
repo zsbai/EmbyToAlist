@@ -33,7 +33,7 @@ async def get_or_cache_alist_raw_url(file_path, host_url, client=httpx.AsyncClie
         now_time = datetime.now().timestamp()
         if now_time - URL_CACHE[cache_key]['time'] < 300:
             logger.debug("Alist Raw URL Cache exists and is valid (less than 5 minutes)")
-            logger.info("Redirected Url: " + URL_CACHE[cache_key]['url'])
+            logger.info("Alist Raw Url: " + URL_CACHE[cache_key]['url'])
             return URL_CACHE[cache_key]['url']
         else:
             logger.debug("Alist Raw URL Cache is expired, re-fetching...")
@@ -45,7 +45,7 @@ async def get_or_cache_alist_raw_url(file_path, host_url, client=httpx.AsyncClie
         'url': raw_url,
         'time': datetime.now().timestamp()
         }
-    logger.info("Redirected Url: " + raw_url)
+    logger.info("Alist Raw Url: " + raw_url)
     return raw_url
 
 # 可以在第一个请求到达时就异步创建alist缓存

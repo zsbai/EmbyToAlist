@@ -72,7 +72,6 @@ async def write_cache_file(item_id, request_info: RequestInfo, req_header=None, 
     path = request_info.file_info.path
     file_size = request_info.file_info.size
     cache_size = request_info.file_info.cache_file_size
-    host_url = request_info.host_url
     
     subdirname, dirname = get_hash_subdirectory_from_path(path, request_info.item_info.item_type)
     
@@ -85,7 +84,7 @@ async def write_cache_file(item_id, request_info: RequestInfo, req_header=None, 
         start_point = request_info.start_byte
         end_point = file_size - 1
     else:
-        logger.error(f"Cache Error {start_point}, File Size is None")
+        logger.error(f"Cache Error {request_info.start_byte}, File Size is None")
         return
     
     # 获取Alist Raw Url
@@ -217,19 +216,25 @@ async def cache_next_episode(request_info: RequestInfo, api_key: str, client: ht
     缓存下一集
     
     :param request_info: 请求信息
+    :param api_key: Emby API Key
     :param client: HTTPX异步客户端
     """
+    if request_info.item_info.item_type != 'episode': 
+        logger.debug(f"Skip caching next episode for non-episode item: {request_info.item_info.item_id}")
+        return False
+    
     next_episode_id = request_info.item_info.item_id + 1
     next_item_info = await get_item_info(next_episode_id, api_key, client)
-    if next_item_info.item_type == 'episode' and next_item_info.season_id == request_info.item_info.season_id:
-        next_file_info = await get_file_info(next_item_info.item_id, api_key, client)
-        next_request_info = RequestInfo(
-            file_info=next_file_info,
-            item_info=next_item_info,
-            host_url=request_info.host_url,
-            start_byte=0,
-            end_byte=None,
-            cache_status=CacheStatus.UNKNOWN
-        )
-        await write_cache_file(next_episode_id, next_request_info, client=client)
+    if next_item_info.season_id == request_info.item_info.season_id:
+        next_file_info = await get_file_info(next_item_info.item_id, api_key, media_source_id=None, client=client)
+        for file in next_file_info:
+            next_request_info = RequestInfo(
+                file_info=file,
+                item_info=next_item_info,
+                host_url=request_info.host_url,
+                start_byte=0,
+                end_byte=None,
+                cache_status=CacheStatus.PARTIAL
+            )
+            await write_cache_file(next_episode_id, next_request_info, client=client)
         return True
