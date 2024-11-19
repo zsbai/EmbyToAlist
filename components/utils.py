@@ -237,6 +237,10 @@ async def get_item_info(item_id, api_key, client) -> ItemInfo:
         logger.error(f"Error: get_item_info failed, {e}")
         raise fastapi.HTTPException(status_code=500, detail="Failed to request Emby server, {e}")
     
+    if not req['Items']: 
+        logger.debug(f"Item not found: {item_id};")
+        return None
+    
     item_type = req['Items'][0]['Type'].lower()
     if item_type != 'movie': item_type = 'episode'
     season_id = int(req['Items'][0]['SeasonId']) if item_type == 'episode' else None

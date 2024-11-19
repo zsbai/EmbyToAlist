@@ -225,7 +225,8 @@ async def cache_next_episode(request_info: RequestInfo, api_key: str, client: ht
     
     next_episode_id = request_info.item_info.item_id + 1
     next_item_info = await get_item_info(next_episode_id, api_key, client)
-    if next_item_info.season_id == request_info.item_info.season_id:
+    # 如果找不到下一集，不缓存；非同季度，不缓存
+    if next_item_info is not None and next_item_info.season_id == request_info.item_info.season_id:
         next_file_info = await get_file_info(next_item_info.item_id, api_key, media_source_id=None, client=client)
         for file in next_file_info:
             next_request_info = RequestInfo(
