@@ -85,7 +85,7 @@ async def write_cache_file(item_id, request_info: RequestInfo, req_header=None, 
         end_point = file_size - 1
     else:
         logger.error(f"Cache Error {request_info.start_byte}, File Size is None")
-        return
+        return False
     
     # 获取Alist Raw Url
     if request_info.raw_url is None:
