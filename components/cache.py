@@ -239,5 +239,9 @@ async def cache_next_episode(request_info: RequestInfo, api_key: str, client: ht
                 raw_url_task=asyncio.create_task(get_or_cache_alist_raw_url(file_path=file.path, host_url=request_info.host_url, client=client))
 
             )
-            await write_cache_file(next_episode_id, next_request_info, client=client)
+            if get_cache_status(next_request_info):
+                logger.debug(f"Skip caching next episode for existing cache: {next_request_info.item_info.item_id}")
+                return False
+            else:
+                await write_cache_file(next_episode_id, next_request_info, client=client)
         return True
