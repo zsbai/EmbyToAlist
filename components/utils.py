@@ -283,10 +283,6 @@ async def reverse_proxy(cache: AsyncGenerator[bytes, None],
                 response.raise_for_status()
                 if status_code == 206 and response.status_code != 206:
                     raise ValueError(f"Expected 206 response, got {response.status_code}")
-                # Update response headers with source response headers
-                for key in ["Content-Length", "Content-Range"]:
-                    if key in response.headers:
-                        response_headers[key] = response.headers[key]
                 async for chunk in response.aiter_bytes():
                     yield chunk
 

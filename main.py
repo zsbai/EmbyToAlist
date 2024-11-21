@@ -126,7 +126,8 @@ async def request_handler(expected_status_code: int,
                 cache=cache, 
                 url_task=alist_raw_url_task, 
                 request_header={
-                    "Range": source_range_header                                           },
+                    "Range": source_range_header
+                    },
                 response_headers=resp_header,
                 client=client
                 )
@@ -135,7 +136,9 @@ async def request_handler(expected_status_code: int,
         return await reverse_proxy(
             cache=cache,
             url_task=alist_raw_url_task,
-            request_header={},
+            request_header={
+                "Range": f"bytes={request_info.file_info.cache_file_size}-"
+                },
             response_headers=resp_header,
             client=client,
             status_code=200
@@ -206,6 +209,7 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
             logger.info("Cached file exists and is valid, response 200.")
             resp_headers = {
             'Cache-Control': 'private, no-transform, no-cache',
+            'Content-Length': str(file_info.size),
             'X-EmbyToAList-Cache': 'Hit',
         }
             return await request_handler(
