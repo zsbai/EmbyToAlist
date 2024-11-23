@@ -77,7 +77,7 @@ async def request_handler(expected_status_code: int,
     :return fastapi.Response: 返回重定向或反代的响应
     """
     
-    if request_info.cache_status != CacheStatus.UNKNOWN and enable_cache_next_episode is True:
+    if request_info.cache_status != CacheStatus.UNKNOWN and background_tasks is not None and enable_cache_next_episode is True:
         background_tasks.add_task(cache_next_episode, request_info=request_info, api_key=request_info.api_key, client=client)
         logger.info("Started background task to cache next episode.")
         
