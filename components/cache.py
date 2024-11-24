@@ -32,8 +32,8 @@ async def read_file(
     读取文件的指定范围，并返回异步生成器。
    
     :param file_path: 缓存文件路径
-    :param start_point: 文件读取起始点
-    :param end_point: 文件读取结束点，None 表示文件末尾
+    :param start_point: 文件读取起始点，HTTP Range 的字节范围
+    :param end_point: 文件读取结束点，None 表示文件末尾，HTTP Range 的字节范围
     :param chunk_size: 每次读取的字节数，默认为 1MB
     
     :return: 生成器，每次返回 chunk_size 大小的数据
@@ -61,6 +61,8 @@ async def read_file(
 async def write_cache_file(item_id, request_info: RequestInfo, req_header=None, client: httpx.AsyncClient=None) -> bool:
     """
     写入缓存文件，end point通过cache_size计算得出
+    
+    缓存文件名格式为 cache_file_{start_point}_{end_point}，start 和 end 都为 HTTP Range 的字节范围（即需-1）
     
     :param item_id: Emby Item ID
     :param request_info: 请求信息
@@ -205,15 +207,20 @@ def get_cache_status(request_info: RequestInfo) -> bool:
     for file in os.listdir(cache_dir):
         if file.startswith('cache_file_'):
             range_start, range_end = map(int, file.split('_')[2:4])
-            if range_start <= request_info.start_byte <= range_end:
-                return True
+            if verify_cache_file(request_info.file_info, (range_start, range_end)):
+                if range_start <= request_info.start_byte <= range_end:
+                    return True
+            else:
+                logger.error(f"Get Cache Error: Cache file {file} is invalid, removing..")
+                os.remove(os.path.join(cache_dir, file))
+                return False
     
     logger.error(f"Get Cache Error: Cache file for range {request_info.start_byte} not found.")
     return False
 
 async def cache_next_episode(request_info: RequestInfo, api_key: str, client: httpx.AsyncClient) -> bool:
     """
-    缓存下一集
+    如果是剧集则缓存下一集；如果是电影则跳过
     
     :param request_info: 请求信息
     :param api_key: Emby API Key
@@ -245,3 +252,24 @@ async def cache_next_episode(request_info: RequestInfo, api_key: str, client: ht
             else:
                 await write_cache_file(next_episode_id, next_request_info, client=client)
         return True
+    
+def verify_cache_file(file_info: FileInfo, cache_file_range: Tuple[int, int]) -> bool:
+    """
+    验证缓存文件是否符合 Emby 文件大小，筛选出错误缓存文件
+    
+    实现方式仅为验证文件大小，不验证文件内容
+    
+    :param file_info: 文件信息
+    :param cache_file_range: 缓存文件的起始点和结束点
+    
+    :return: 缓存文件是否符合视频文件大小
+    """
+    start, end = cache_file_range
+    # 开头缓存文件
+    if start == 0 and end == file_info.cache_file_size - 1:
+        return True
+    # 末尾缓存文件
+    elif end == file_info.size - 1:
+        return True
+    else:
+        return False

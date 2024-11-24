@@ -1,12 +1,11 @@
 from contextlib import asynccontextmanager
 from datetime import datetime
-from dataclasses import dataclass
-from enum import StrEnum
 
 import fastapi
 import httpx
 import uvicorn
 from uvicorn.server import logger
+from aiocache import cached, Cache
 
 from config import *
 from components.utils import *
@@ -22,29 +21,12 @@ async def lifespan(app: fastapi.FastAPI):
 
 app = fastapi.FastAPI(lifespan=lifespan)
 
-URL_CACHE = {}
-
 # return Alist Raw Url
 @get_time
-async def get_or_cache_alist_raw_url(file_path, host_url, client=httpx.AsyncClient) -> str:
-    """创建或获取Alist Raw Url缓存，缓存时间为5分钟"""
-    cache_key = file_path + host_url
-    if cache_key in URL_CACHE.keys():
-        now_time = datetime.now().timestamp()
-        if now_time - URL_CACHE[cache_key]['time'] < 300:
-            logger.debug("Alist Raw URL Cache exists and is valid (less than 5 minutes)")
-            logger.info("Alist Raw Url: " + URL_CACHE[cache_key]['url'])
-            return URL_CACHE[cache_key]['url']
-        else:
-            logger.debug("Alist Raw URL Cache is expired, re-fetching...")
-            del URL_CACHE[cache_key]
-    
+@cached(ttl=600, cache=Cache.MEMORY, key_builder=lambda f, file_path, host_url, client: file_path + host_url)
+async def get_or_cache_alist_raw_url(file_path, host_url, client: httpx.AsyncClient) -> str:
+    """创建或获取Alist Raw Url缓存，缓存时间为5分钟"""    
     raw_url = await get_alist_raw_url(file_path, host_url=host_url, client=client)
-
-    URL_CACHE[cache_key] = {
-        'url': raw_url,
-        'time': datetime.now().timestamp()
-        }
     logger.info("Alist Raw Url: " + raw_url)
     return raw_url
 

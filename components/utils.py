@@ -38,7 +38,7 @@ def get_content_type(container) -> str:
     # 返回对应的Content-Type，如果未找到，返回一个默认值
     return content_types.get(container.lower(), 'application/octet-stream')
 
-def get_hash_subdirectory_from_path(file_path, media_type) -> tuple:
+def get_hash_subdirectory_from_path(file_path, media_type) -> Tuple[str, str]:
     """
     计算给定文件路径的MD5哈希，并返回哈希值的前两位作为子目录名称。
     电影：只计算视频文件本身的上层文件夹路径
