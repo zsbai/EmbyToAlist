@@ -6,6 +6,7 @@ import urllib.parse
 import fastapi
 import httpx
 from uvicorn.server import logger
+from aiolimiter import AsyncLimiter
 
 from config import *
 from components.models import *
@@ -270,10 +271,12 @@ async def reverse_proxy(cache: AsyncGenerator[bytes, None],
     
     :return: fastapi.responses.StreamingResponse
     """
+    limiter = AsyncLimiter(10*1024*1024, 1)
     try:
         async def merged_stream():
             if cache is not None:
                 async for chunk in cache:
+                    await limiter.acquire(len(chunk))
                     yield chunk
                 logger.info("Cache exhausted, streaming from source")
             raw_url = await url_task
@@ -284,6 +287,7 @@ async def reverse_proxy(cache: AsyncGenerator[bytes, None],
                 if status_code == 206 and response.status_code != 206:
                     raise ValueError(f"Expected 206 response, got {response.status_code}")
                 async for chunk in response.aiter_bytes():
+                    await limiter.acquire(len(chunk))
                     yield chunk
 
         return fastapi.responses.StreamingResponse(
