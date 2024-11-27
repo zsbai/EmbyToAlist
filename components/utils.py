@@ -272,8 +272,8 @@ async def reverse_proxy(cache: AsyncGenerator[bytes, None],
     :return: fastapi.responses.StreamingResponse
     """
     limiter = AsyncLimiter(10*1024*1024, 1)
-    try:
-        async def merged_stream():
+    async def merged_stream():
+        try:
             if cache is not None:
                 async for chunk in cache:
                     await limiter.acquire(len(chunk))
@@ -289,13 +289,12 @@ async def reverse_proxy(cache: AsyncGenerator[bytes, None],
                 async for chunk in response.aiter_bytes():
                     await limiter.acquire(len(chunk))
                     yield chunk
+        except Exception as e:
+            logger.error(f"Reverse_proxy failed, {e}")
+            raise fastapi.HTTPException(status_code=500, detail="Reverse Proxy Failed")
 
-        return fastapi.responses.StreamingResponse(
-            merged_stream(), 
-            headers=response_headers, 
-            status_code=status_code
-            )
-        
-    except Exception as e:
-        logger.error(f"Reverse_proxy failed, {e}")
-        raise fastapi.HTTPException(status_code=500, detail="Reverse Proxy Failed")
+    return fastapi.responses.StreamingResponse(
+        merged_stream(), 
+        headers=response_headers, 
+        status_code=status_code
+        )
