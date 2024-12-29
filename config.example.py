@@ -42,5 +42,7 @@ mount_path_prefix_add = ""
 enable_cache = False
 enable_cache_next_episode = False
 cache_path = "/app/cache"
+# 缓存文件名称黑名单，文件名称包含以下字符串的文件不会被缓存，支持正则表达式
+cache_blacklist = []
 
 log_level = "INFO"

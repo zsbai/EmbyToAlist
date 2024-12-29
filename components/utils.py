@@ -298,3 +298,26 @@ async def reverse_proxy(cache: AsyncGenerator[bytes, None],
         headers=response_headers, 
         status_code=status_code
         )
+
+def validate_regex(word: str) -> bool:
+    """
+    验证用户输入是否为有效的正则表达式
+    """
+    try:
+        re.compile(word)
+        return True
+    except re.error:
+        return False
+
+def match_with_regex(pattern, target_string):
+    """
+    使用正则表达式匹配目标字符串
+    """
+    if validate_regex(pattern):
+        match = re.search(pattern, target_string)
+        if match:
+            return True
+        else:
+            return False
+    else:
+        raise ValueError("Invalid regex pattern")

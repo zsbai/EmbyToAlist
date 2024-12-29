@@ -1,5 +1,4 @@
 from contextlib import asynccontextmanager
-from datetime import datetime
 
 import fastapi
 import httpx
@@ -161,6 +160,15 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
         redirected_url = f"{host_url}preventRedirect{request.url.path}{'?' + request.url.query if request.url.query else ''}"
         logger.info("Redirected Url: " + redirected_url)
         return fastapi.responses.RedirectResponse(url=redirected_url, status_code=302)
+    
+    if not cache_blacklist:
+        if any(match_with_regex(file_info.path, pattern) for pattern in cache_blacklist):
+            logger.info("File is in cache blacklist.")
+            return await request_handler(
+                expected_status_code=302,
+                request_info=request_info,
+                client=app.requests_client
+                )
     
     # 如果满足alist直链条件，提前通过异步缓存alist直链
     request_info.raw_url_task = asyncio.create_task(
