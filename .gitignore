@@ -1,5 +1,6 @@
 # config files
 config.py
+test_assets/*
 
 # Created by https://www.toptal.com/developers/gitignore/api/python,windows,visualstudiocode,macos
 # Edit at https://www.toptal.com/developers/gitignore?templates=python,windows,visualstudiocode,macos

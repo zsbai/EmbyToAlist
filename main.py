@@ -361,10 +361,48 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
             client=app.requests_client
             )
 
+@app.post('/webhook')
+async def webhook(request: fastapi.Request):
+    if not clean_cache_after_remove_media:
+        raise fastapi.HTTPException(status_code=400, detail="Webhook is not enabled")
+    
+    if 'application/json' not in request.headers.get('Content-Type', ''):
+        raise fastapi.HTTPException(status_code=400, detail="Content-Type is not application/json")
+    
+    data = await request.json()
+    
+    match data.get('Event'):
+        case "system.notificationtest":
+            print("Webhook test successful.")
+            return fastapi.responses.Response(status_code=200)
+        case "library.deleted":
+            if data.get('IsFolder') is True:
+                raise fastapi.HTTPException(status_code=400, detail="Folder deletion is not supported.")
+            
+            deleted_file_info = FileInfo(
+                path=data.get('Item').get('Path'),
+                bitrate=0,
+                size=data.get('Item').get('Size'),
+                container="",
+                cache_file_size=0
+                )
+            deleted_item_info = ItemInfo(
+                item_id=data.get('Item').get('Id'),
+                item_type=data.get('Item').get('Type'),
+                # 电影：如果不存在SeasonId则为None
+                season_id=data.get('Item').get('SeasonId', None)
+                )
+            
+            if clean_cache(deleted_item_info, deleted_file_info):
+                print(f"Cache for Item ID {deleted_item_info.item_id} has been cleaned.")
+                return fastapi.responses.Response(status_code=200)
+            else:
+                logger.error(f"Failed to clean cache for Item ID {deleted_item_info.item_id}.")
+            
+        case _:
+            raise fastapi.HTTPException(status_code=400, detail="Event not supported")
+
+
 if __name__ == "__main__":
-    try:
-        log_level = log_level.lower()
-    except NameError:
-        logger.warning("Log level not set in config.py, defaulting to INFO")
-        log_level = "info"
+    log_level = log_level.lower()
     uvicorn.run(app, port=60001, host='0.0.0.0', log_config="logger_config.json", log_level=log_level)

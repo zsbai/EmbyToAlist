@@ -19,6 +19,8 @@ class CacheStatus(StrEnum):
 
 @dataclass
 class ItemInfo:
+    """ 视频信息，如果type是movie，则season_id为None """
+    
     item_id: int
     item_type: str
     season_id: int

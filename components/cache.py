@@ -273,3 +273,34 @@ def verify_cache_file(file_info: FileInfo, cache_file_range: Tuple[int, int]) ->
         return True
     else:
         return False
+    
+async def clean_cache(file_info: FileInfo, item_info: ItemInfo) -> bool:
+    """
+    根据webhook信息删除缓存文件，及缓存文件夹
+    
+    :param file_info: 文件信息
+    :param item_info: 视频信息
+    
+    :return: bool: 是否删除成功
+    """
+    path = file_info.path
+    subdirname, dirname = get_hash_subdirectory_from_path(path, item_info.item_type)
+    cache_dir = os.path.join(cache_path, subdirname, dirname)
+    lock = get_cache_lock(subdirname, dirname)
+    async with lock:
+        try:
+            for file in os.listdir(cache_dir):
+                if file.startswith('cache_file_'):
+                    await aiofiles.os.remove(os.path.join(cache_dir, file))
+            # 检查文件夹是否为空
+            if not os.listdir(cache_dir):
+                await aiofiles.os.rmdir(cache_dir)
+            else:
+                logger.error(f"Clean Cache Error: Cache directory is not empty: {cache_dir}")
+                raise Exception("Cache directory is not empty")
+            
+            logger.info(f"Clean Cache: {cache_dir}")
+            return True
+        except Exception as e:
+            logger.error(f"Clean Cache Error: {e}")
+            return False
