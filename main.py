@@ -22,10 +22,10 @@ app = fastapi.FastAPI(lifespan=lifespan)
 
 # return Alist Raw Url
 @get_time
-@cached(ttl=600, cache=Cache.MEMORY, key_builder=lambda f, file_path, host_url, client: file_path + host_url)
-async def get_or_cache_alist_raw_url(file_path, host_url, client: httpx.AsyncClient) -> str:
+@cached(ttl=600, cache=Cache.MEMORY, key_builder=lambda f, file_path, host_url, ua, client: file_path + host_url + ua)
+async def get_or_cache_alist_raw_url(file_path, host_url, ua, client: httpx.AsyncClient) -> str:
     """创建或获取Alist Raw Url缓存，缓存时间为5分钟"""    
-    raw_url = await get_alist_raw_url(file_path, host_url=host_url, client=client)
+    raw_url = await get_alist_raw_url(file_path, host_url=host_url, ua=ua, client=client)
     logger.info("Alist Raw Url: " + raw_url)
     return raw_url
 
@@ -175,6 +175,7 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
         get_or_cache_alist_raw_url(
             file_path=file_info.path,
             host_url=host_url,
+            ua=request.headers.get('User-Agent'),
             client=app.requests_client
             )
         )

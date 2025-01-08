@@ -119,7 +119,7 @@ def extract_api_key(request: fastapi.Request):
                 api_key = match_token.group(1)
     return api_key or emby_key
 
-async def get_alist_raw_url(file_path, host_url, client: httpx.AsyncClient) -> str:
+async def get_alist_raw_url(file_path, host_url, ua, client: httpx.AsyncClient) -> str:
     """根据文件路径获取Alist Raw Url"""
     
     alist_api_url = f"{alist_server}/api/fs/get"
@@ -132,6 +132,9 @@ async def get_alist_raw_url(file_path, host_url, client: httpx.AsyncClient) -> s
         "Authorization": alist_key,
         "Content-Type": "application/json;charset=UTF-8"
     }
+    
+    if ua is not None:
+        header['User-Agent'] = ua
     
     try:
         req = await client.post(alist_api_url, json=body, headers=header)
