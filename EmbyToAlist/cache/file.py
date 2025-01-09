@@ -7,7 +7,7 @@ import aiofiles.os
 import httpx
 from uvicorn.server import logger
 
-from components.utils import *
+from ..utils import *
 from main import get_or_cache_alist_raw_url, FileInfo, RequestInfo, CacheStatus
 from typing import AsyncGenerator, Optional
 
