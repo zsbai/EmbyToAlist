@@ -1,5 +1,3 @@
-# config files
-config.py
 test_assets/*
 
 # Created by https://www.toptal.com/developers/gitignore/api/python,windows,visualstudiocode,macos
