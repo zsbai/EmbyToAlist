@@ -142,7 +142,9 @@ async def get_alist_raw_url(file_path, host_url, ua, client: httpx.AsyncClient) 
         req = req.json()
     except Exception as e:
         logger.error(f"Error: get_alist_raw_url failed, {e}")
-        return ('Alist Server Error', 500)
+        logger.error(f"Alist Server Return a {req.status_code} Error")
+        logger.error(f"info: {req.text}")
+        raise fastapi.HTTPException(status_code=500, detail="Failed to request Alist server, {e}")
     
     code = req['code']
     
