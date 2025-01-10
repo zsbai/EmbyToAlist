@@ -1,4 +1,4 @@
-from httpx import AsyncClient
+from httpx import AsyncClient, ReadTimeout
 from fastapi import HTTPException
 from uvicorn.server import logger
 
@@ -25,9 +25,13 @@ async def get_alist_raw_url(file_path, ua, client: AsyncClient) -> str:
         req = await client.post(alist_api_url, json=body, headers=header)
         req.raise_for_status()
         req = req.json()
+    except ReadTimeout as e:
+        logger.error(f"Error: get_alist_raw_url failed, {e}")
+        raise HTTPException(status_code=500, detail="Alist Server Timeout")
     except Exception as e:
         logger.error(f"Error: get_alist_raw_url failed, {e}")
-        return ('Alist Server Error', 500)
+        logger.error(f"Error: {req.text}")
+        raise HTTPException(status_code=500, detail="Alist Server Error")
     
     code = req['code']
     
