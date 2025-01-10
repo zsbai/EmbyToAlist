@@ -35,7 +35,13 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
     item_info: ItemInfo = await get_item_info(item_id, api_key, client=requests_client)
     # host_url example: https://emby.example.com:8096/
     host_url = str(request.base_url)
-    request_info = RequestInfo(file_info=file_info, item_info=item_info, host_url=host_url, api_key=api_key)
+    request_info = RequestInfo(
+        file_info=file_info, 
+        item_info=item_info, 
+        host_url=host_url, 
+        api_key=api_key,
+        headers=request.headers
+        )
     
     logger.info(f"Requested Item ID: {item_id}")
     logger.info("MediaFile Mount Path: " + file_info.path)

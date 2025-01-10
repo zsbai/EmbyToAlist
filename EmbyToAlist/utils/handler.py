@@ -43,9 +43,14 @@ async def request_handler(expected_status_code: int,
         
     alist_raw_url_task = request_info.raw_url_task
 
+    if expected_status_code == 416:
+        return fastapi.responses.Response(status_code=416, headers=resp_header)
+    
     if expected_status_code == 302:
         raw_url = await alist_raw_url_task
         return fastapi.responses.RedirectResponse(url=raw_url, status_code=302)
+    
+    request_header = dict(request_info.headers)
     
     if expected_status_code == 206:
         start_byte = request_info.start_byte
@@ -61,12 +66,11 @@ async def request_handler(expected_status_code: int,
             else:
                 source_range_header = f"bytes={start_byte}-"
 
+            request_header["Range"] = source_range_header
             return await reverse_proxy(
                 cache=None, 
                 url_task=alist_raw_url_task, 
-                request_header={
-                    "Range": source_range_header
-                    },
+                request_header=request_header,
                 response_headers=resp_header,
                 client=client
                 )
@@ -82,29 +86,24 @@ async def request_handler(expected_status_code: int,
             else:
                 source_range_header = f"bytes={source_start}-"
             
+            request_header["Range"] = source_range_header
             return await reverse_proxy(
                 cache=cache, 
                 url_task=alist_raw_url_task, 
-                request_header={
-                    "Range": source_range_header
-                    },
+                request_header=request_header,
                 response_headers=resp_header,
                 client=client
                 )
         
     if expected_status_code == 200:
+        request_header["Range"] = f"bytes={request_info.file_info.cache_file_size}-"
         return await reverse_proxy(
             cache=cache,
             url_task=alist_raw_url_task,
-            request_header={
-                "Range": f"bytes={request_info.file_info.cache_file_size}-"
-                },
+            request_header=request_header,
             response_headers=resp_header,
             client=client,
             status_code=200
             )
-                
-    if expected_status_code == 416:
-        return fastapi.responses.Response(status_code=416, headers=resp_header)
     
     raise fastapi.HTTPException(status_code=500, detail=f"Unexpected argument: {expected_status_code}")
