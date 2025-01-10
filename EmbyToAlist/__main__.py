@@ -19,4 +19,4 @@ app = fastapi.FastAPI(lifespan=lifespan)
 app.include_router(rediret.router)
 
 if __name__ == "__main__":
-    uvicorn.run(app, port=60001, host='0.0.0.0', log_config="logger_config.json", log_level=LOG_LEVEL)
+    uvicorn.run(app, port=60001, host='0.0.0.0', log_level=LOG_LEVEL)

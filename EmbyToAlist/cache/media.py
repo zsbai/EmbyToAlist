@@ -7,9 +7,12 @@ import aiofiles.os
 import httpx
 from uvicorn.server import logger
 
-from ..utils import *
-from main import get_or_cache_alist_raw_url, FileInfo, RequestInfo, CacheStatus
-from typing import AsyncGenerator, Optional
+from ..config import CACHE_PATH
+from ..models import CacheStatus, FileInfo, ItemInfo, RequestInfo
+from ..utils.path import get_hash_subdirectory_from_path
+from ..cache.link import get_or_cache_alist_raw_url
+from ..api import emby as emby_api
+from typing import AsyncGenerator, Optional, Tuple
 
 cache_locks = WeakValueDictionary()
 
@@ -97,12 +100,12 @@ async def write_cache_file(item_id, request_info: RequestInfo, req_header=None, 
     
     # 根据起始点和缓存大小确定缓存文件路径
     cache_file_name = f'cache_file_{start_point}_{end_point}'
-    cache_file_path = os.path.join(cache_path, subdirname, dirname, cache_file_name)
+    cache_file_path = os.path.join(CACHE_PATH, subdirname, dirname, cache_file_name)
     logger.debug(f"Start to cache file {start_point}-{end_point}: {item_id}, file path: {cache_file_path}")
     
     os.makedirs(os.path.dirname(cache_file_path), exist_ok=True)
      
-    cache_write_tag_path = os.path.join(cache_path, subdirname, dirname, f'{cache_file_name}.tag')
+    cache_write_tag_path = os.path.join(CACHE_PATH, subdirname, dirname, f'{cache_file_name}.tag')
     lock = get_cache_lock(subdirname, dirname)
     
     async with lock:
@@ -111,7 +114,7 @@ async def write_cache_file(item_id, request_info: RequestInfo, req_header=None, 
             pass
     
         # 检查是否已有包含当前范围的缓存文件
-        for file in os.listdir(os.path.join(cache_path, subdirname, dirname)):
+        for file in os.listdir(os.path.join(CACHE_PATH, subdirname, dirname)):
             if file.startswith('cache_file_') and file.endswith('.tag') is False:
                 file_range_start, file_range_end = map(int, file.split('_')[2:4])
                 
@@ -121,7 +124,7 @@ async def write_cache_file(item_id, request_info: RequestInfo, req_header=None, 
                     return False
                 elif start_point <= file_range_start and end_point >= file_range_end:
                     logger.warning(f"Existing Cache Range within new range. Deleting old cache.")
-                    await aiofiles.os.remove(os.path.join(cache_path, subdirname, dirname, file))
+                    await aiofiles.os.remove(os.path.join(CACHE_PATH, subdirname, dirname, file))
         
         # 请求Alist Raw Url，好像请求头没太所谓
         if req_header is None:
@@ -167,7 +170,7 @@ def read_cache_file(request_info: RequestInfo) -> AsyncGenerator[bytes, None]:
     :return: function read_file
     """    
     subdirname, dirname = get_hash_subdirectory_from_path(request_info.file_info.path, request_info.item_info.item_type)
-    file_dir = os.path.join(cache_path, subdirname, dirname)
+    file_dir = os.path.join(CACHE_PATH, subdirname, dirname)
     
     # 查找与 startPoint 匹配的缓存文件，endPoint 为文件名的一部分
     for file in os.listdir(file_dir):
@@ -191,16 +194,16 @@ def get_cache_status(request_info: RequestInfo) -> bool:
     :param request_info: 请求信息
     """
     subdirname, dirname = get_hash_subdirectory_from_path(request_info.file_info.path, request_info.item_info.item_type)
-    cache_dir = os.path.join(cache_path, subdirname, dirname)
+    cache_dir = os.path.join(CACHE_PATH, subdirname, dirname)
     
     if os.path.exists(cache_dir) is False:
-        logger.warning(f"Get Cache Error: Cache directory does not exist: {os.path.join(cache_path, subdirname, dirname)}")
+        logger.warning(f"Get Cache Error: Cache directory does not exist: {os.path.join(CACHE_PATH, subdirname, dirname)}")
         return False
     
     # 检查是否有任何缓存文件正在写入
     for file in os.listdir(cache_dir):
         if file.endswith('.tag'):
-            logger.warning(f"Get Cache Error: Cache file is being written: {os.path.join(cache_path, subdirname, dirname, file)}")
+            logger.warning(f"Get Cache Error: Cache file is being written: {os.path.join(CACHE_PATH, subdirname, dirname, file)}")
             return False
     
     # 查找与 startPoint 匹配的缓存文件，endPoint 为文件名的一部分
@@ -231,10 +234,10 @@ async def cache_next_episode(request_info: RequestInfo, api_key: str, client: ht
         return False
     
     next_episode_id = request_info.item_info.item_id + 1
-    next_item_info = await get_item_info(next_episode_id, api_key, client)
+    next_item_info = await emby_api.get_item_info(next_episode_id, api_key, client)
     # 如果找不到下一集，不缓存；非同季度，不缓存
     if next_item_info is not None and next_item_info.season_id == request_info.item_info.season_id:
-        next_file_info = await get_file_info(next_item_info.item_id, api_key, media_source_id=None, client=client)
+        next_file_info = await emby_api.get_file_info(next_item_info.item_id, api_key, media_source_id=None, client=client)
         for file in next_file_info:
             next_request_info = RequestInfo(
                 file_info=file,
@@ -285,7 +288,7 @@ async def clean_cache(file_info: FileInfo, item_info: ItemInfo) -> bool:
     """
     path = file_info.path
     subdirname, dirname = get_hash_subdirectory_from_path(path, item_info.item_type)
-    cache_dir = os.path.join(cache_path, subdirname, dirname)
+    cache_dir = os.path.join(CACHE_PATH, subdirname, dirname)
     lock = get_cache_lock(subdirname, dirname)
     async with lock:
         try:

@@ -3,10 +3,11 @@ from uvicorn.server import logger
 
 from ..config import *
 from ..models import *
-from ..utils import *
+from ..utils.helpers import *
+from ..utils.path import *
+from ..cache.media import *
 from ..handler import request_handler
-from ..cache.file import *
-from ..cache.alist import get_or_cache_alist_raw_url
+from ..cache.link import get_or_cache_alist_raw_url
 from ..api.emby import get_item_info, get_file_info
 
 router = fastapi.APIRouter()
@@ -44,14 +45,14 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
         logger.info("Redirected Url: " + redirected_url)
         return fastapi.responses.RedirectResponse(url=redirected_url, status_code=302)
     
-    if not cache_blacklist:
-        if any(match_with_regex(file_info.path, pattern) for pattern in cache_blacklist):
-            logger.info("File is in cache blacklist.")
-            return await request_handler(
-                expected_status_code=302,
-                request_info=request_info,
-                client=requests_client
-                )
+    # if not cache_blacklist:
+    #     if any(match_with_regex(file_info.path, pattern) for pattern in cache_blacklist):
+    #         logger.info("File is in cache blacklist.")
+    #         return await request_handler(
+    #             expected_status_code=302,
+    #             request_info=request_info,
+    #             client=requests_client
+    #             )
     
     # 如果满足alist直链条件，提前通过异步缓存alist直链
     request_info.raw_url_task = asyncio.create_task(
@@ -64,7 +65,7 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
         )
     
     # 如果没有启用缓存，直接返回Alist Raw Url
-    if not enable_cache:
+    if not CACHE_ENABLE:
         return await request_handler(
             expected_status_code=302,
             request_info=request_info,

@@ -4,8 +4,9 @@ from uvicorn.server import logger
 
 from .config import *
 from .utils import *
-from .cache.file import *
+from .cache.media import *
 from .models import *
+from .utils.network import *
 
 # 在第一个请求到达时就异步创建alist缓存任务
 # 重定向的情况：
@@ -36,7 +37,7 @@ async def request_handler(expected_status_code: int,
     :return fastapi.Response: 返回重定向或反代的响应
     """
     
-    if request_info.cache_status != CacheStatus.UNKNOWN and background_tasks is not None and enable_cache_next_episode is True:
+    if request_info.cache_status != CacheStatus.UNKNOWN and background_tasks is not None and CACHE_NEXT_EPISODE is True:
         background_tasks.add_task(cache_next_episode, request_info=request_info, api_key=request_info.api_key, client=client)
         logger.info("Started background task to cache next episode.")
         
