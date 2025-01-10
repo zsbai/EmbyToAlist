@@ -140,6 +140,9 @@ async def get_alist_raw_url(file_path, host_url, ua, client: httpx.AsyncClient) 
         req = await client.post(alist_api_url, json=body, headers=header)
         req.raise_for_status()
         req = req.json()
+    except httpx.ReadTimeout:
+        logger.error("Alist server response timeout, please check your network connectivity to Alist server")
+        raise fastapi.HTTPException(status_code=500, detail="Alist server response timeout")
     except Exception as e:
         logger.error(f"Error: get_alist_raw_url failed, {e}")
         logger.error(f"Alist Server Return a {req.status_code} Error")
