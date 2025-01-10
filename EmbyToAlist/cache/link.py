@@ -2,9 +2,7 @@ import httpx
 from uvicorn.server import logger
 from aiocache import cached, Cache
 
-from config import *
 from ..utils.helpers import get_time
-from ..models import *
 from ..api.alist import get_alist_raw_url
 
 # return Alist Raw Url

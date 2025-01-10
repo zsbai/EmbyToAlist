@@ -4,7 +4,7 @@ import os
 from uvicorn.server import logger
 from typing import Tuple
 
-from ..config import *
+from ..config import MOUNT_PATH_PREFIX_REMOVE, MOUNT_PATH_PREFIX_ADD, IGNORE_PATH
 
 def get_hash_subdirectory_from_path(file_path, media_type) -> Tuple[str, str]:
     """

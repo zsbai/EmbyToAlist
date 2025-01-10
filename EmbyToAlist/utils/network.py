@@ -3,8 +3,6 @@ import httpx
 from uvicorn.server import logger
 from aiolimiter import AsyncLimiter
 
-from ..config import *
-from ..models import *
 from typing import AsyncGenerator
 
 async def reverse_proxy(cache: AsyncGenerator[bytes, None],

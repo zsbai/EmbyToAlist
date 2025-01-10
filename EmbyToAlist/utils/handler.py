@@ -2,11 +2,11 @@ import fastapi
 import httpx
 from uvicorn.server import logger
 
-from .config import *
-from .utils import *
-from .cache.media import *
-from .models import *
-from .utils.network import *
+from ..config import CACHE_NEXT_EPISODE
+from .network import reverse_proxy
+from ..cache.media import cache_next_episode
+from ..models import RequestInfo, CacheStatus
+from typing import AsyncGenerator
 
 # 在第一个请求到达时就异步创建alist缓存任务
 # 重定向的情况：

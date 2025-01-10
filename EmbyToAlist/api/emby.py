@@ -4,7 +4,7 @@ from uvicorn.server import logger
 
 from ..config import EMBY_SERVER
 from ..models import ItemInfo, FileInfo
-from ..utils import transform_file_path
+from ..utils.path import transform_file_path
 
 async def get_item_info(item_id, api_key, client) -> ItemInfo:
     item_info_api = f"{EMBY_SERVER}/emby/Items?api_key={api_key}&Ids={item_id}"

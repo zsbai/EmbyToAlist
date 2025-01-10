@@ -4,7 +4,7 @@ import fastapi
 import httpx
 import uvicorn
 
-from .config import *
+from .config import LOG_LEVEL
 from .routes import rediret
 
 # 使用上下文管理器，创建异步请求客户端

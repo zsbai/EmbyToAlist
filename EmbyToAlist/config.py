@@ -17,4 +17,4 @@ CACHE_ENABLE = env.bool("CACHE_ENABLE", default=False)
 CACHE_NEXT_EPISODE = env.bool("CACHE_NEXT_EPISODE", default=False)
 CACHE_PATH = env.str("CACHE_PATH", default="./cache")
 
-LOG_LEVEL = env.str("LOG_LEVEL", default="INFO")
+LOG_LEVEL = env.str("LOG_LEVEL", default="info").lower()
