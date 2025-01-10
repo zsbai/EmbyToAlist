@@ -59,9 +59,7 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
     # 如果满足alist直链条件，提前通过异步缓存alist直链
     request_info.raw_url_task = asyncio.create_task(
         get_or_cache_alist_raw_url(
-            file_path=file_info.path,
-            host_url=host_url,
-            ua=request.headers.get('User-Agent'),
+            request_info=request_info,
             client=requests_client
             )
         )

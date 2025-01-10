@@ -4,7 +4,7 @@ from uvicorn.server import logger
 
 from ..config import ALIST_SERVER, ALIST_API_KEY
 
-async def get_alist_raw_url(file_path, host_url, ua, client: AsyncClient) -> str:
+async def get_alist_raw_url(file_path, ua, client: AsyncClient) -> str:
     """根据文件路径获取Alist Raw Url"""
     
     alist_api_url = f"{ALIST_SERVER}/api/fs/get"
