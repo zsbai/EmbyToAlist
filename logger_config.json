@@ -22,11 +22,6 @@
         "formatter": "access",
         "class": "logging.StreamHandler",
         "stream": "ext://sys.stdout"
-      },
-      "file": {
-        "class": "logging.FileHandler",
-        "formatter": "default",
-        "filename": "log/app.log"
       }
     },
     "loggers": {
