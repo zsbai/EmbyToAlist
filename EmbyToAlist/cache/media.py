@@ -126,7 +126,7 @@ async def write_cache_file(item_id, request_info: RequestInfo, req_header=None, 
                     logger.warning(f"Existing Cache Range within new range. Deleting old cache.")
                     await aiofiles.os.remove(os.path.join(CACHE_PATH, subdirname, dirname, file))
         
-        # 请求Alist Raw Url，好像请求头没太所谓
+        # 请求Alist Raw Url，115会验证header中的UA，所以需要传入
         if req_header is None:
             req_header = {}
         else:
@@ -156,8 +156,10 @@ async def write_cache_file(item_id, request_info: RequestInfo, req_header=None, 
         except Exception as e:
             # 错误处理并删除缓存文件和标签文件
             logger.error(f"Write Cache Error {start_point}-{end_point}: {e}")
-            await aiofiles.os.remove(cache_file_path)
-            await aiofiles.os.remove(cache_write_tag_path)
+            if await aiofiles.os.path.exists(cache_file_path):
+                await aiofiles.os.remove(cache_file_path)
+            if await aiofiles.os.path.exists(cache_write_tag_path):
+                await aiofiles.os.remove(cache_write_tag_path)
             return False
 
     
@@ -246,14 +248,19 @@ async def cache_next_episode(request_info: RequestInfo, api_key: str, client: ht
                 start_byte=0,
                 end_byte=None,
                 cache_status=CacheStatus.PARTIAL,
-                raw_url_task=asyncio.create_task(get_or_cache_alist_raw_url(request_info, client=client))
+                raw_url_task=asyncio.create_task(
+                    get_or_cache_alist_raw_url(
+                        request_info, 
+                        client=client
+                        )
+                    )
 
             )
             if get_cache_status(next_request_info):
                 logger.debug(f"Skip caching next episode for existing cache: {next_request_info.item_info.item_id}")
                 return False
             else:
-                await write_cache_file(next_episode_id, next_request_info, client=client)
+                await write_cache_file(next_episode_id, next_request_info, req_header=request_info.headers, client=client)
         return True
     
 def verify_cache_file(file_info: FileInfo, cache_file_range: Tuple[int, int]) -> bool:
