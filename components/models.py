@@ -45,3 +45,4 @@ class RequestInfo:
     api_key: Optional[str] = None
     raw_url: Optional[str] = None
     raw_url_task: Optional[asyncio.Task[str]] = None
+    headers: Optional[dict] = None

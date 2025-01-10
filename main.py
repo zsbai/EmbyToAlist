@@ -82,12 +82,12 @@ async def request_handler(expected_status_code: int,
             else:
                 source_range_header = f"bytes={start_byte}-"
 
+            headers = dict(request_info.headers)
+            headers["Range"] = source_range_header
             return await reverse_proxy(
                 cache=None, 
                 url_task=alist_raw_url_task, 
-                request_header={
-                    "Range": source_range_header
-                    },
+                request_header=headers,
                 response_headers=resp_header,
                 client=client
                 )
@@ -103,23 +103,23 @@ async def request_handler(expected_status_code: int,
             else:
                 source_range_header = f"bytes={source_start}-"
             
+            headers = dict(request_info.headers)
+            headers["Range"] = source_range_header
             return await reverse_proxy(
                 cache=cache, 
                 url_task=alist_raw_url_task, 
-                request_header={
-                    "Range": source_range_header
-                    },
+                request_header=headers,
                 response_headers=resp_header,
                 client=client
                 )
         
     if expected_status_code == 200:
+        headers = dict(request_info.headers)
+        headers["Range"] = f"bytes={request_info.file_info.cache_file_size}-"
         return await reverse_proxy(
             cache=cache,
             url_task=alist_raw_url_task,
-            request_header={
-                "Range": f"bytes={request_info.file_info.cache_file_size}-"
-                },
+            request_header=headers,
             response_headers=resp_header,
             client=client,
             status_code=200
@@ -149,7 +149,14 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
     item_info: ItemInfo = await get_item_info(item_id, api_key, client=app.requests_client)
     # host_url example: https://emby.example.com:8096/
     host_url = str(request.base_url)
-    request_info = RequestInfo(file_info=file_info, item_info=item_info, host_url=host_url, api_key=api_key)
+    ua = request.headers.get('User-Agent')
+    request_info = RequestInfo(
+        file_info=file_info, 
+        item_info=item_info, 
+        host_url=host_url,
+        api_key=api_key,
+        headers=request.headers,
+        )
     
     logger.info(f"Requested Item ID: {item_id}")
     logger.info("MediaFile Mount Path: " + file_info.path)
@@ -175,7 +182,7 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
         get_or_cache_alist_raw_url(
             file_path=file_info.path,
             host_url=host_url,
-            ua=request.headers.get('User-Agent'),
+            ua=ua,
             client=app.requests_client
             )
         )
