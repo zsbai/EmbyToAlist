@@ -45,6 +45,7 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
     
     logger.info(f"Requested Item ID: {item_id}")
     logger.info("MediaFile Mount Path: " + file_info.path)
+    logger.debug("Request Headers: " + str(request.headers))
     
     # if checkFilePath return False：return Emby originalUrl
     if not should_redirect_to_alist(file_info.path):
