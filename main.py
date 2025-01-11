@@ -249,7 +249,7 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
     
     if start_byte >= file_info.size:
         logger.warning("Requested Range is out of file size.")
-        return request_handler(
+        return await request_handler(
             expected_status_code=416,
             request_info=request_info,
             resp_header={'Content-Range': f'bytes */{file_info.size}'}
