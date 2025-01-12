@@ -10,8 +10,7 @@ from uvicorn.server import logger
 from ..config import CACHE_PATH
 from ..models import CacheStatus, FileInfo, ItemInfo, RequestInfo
 from ..utils.path import get_hash_subdirectory_from_path
-from ..cache.link import get_or_cache_alist_raw_url
-from ..api import emby as emby_api
+from ..api import emby as emby_api, alist as alist_api
 from typing import AsyncGenerator, Optional, Tuple
 
 cache_locks = WeakValueDictionary()
@@ -249,8 +248,9 @@ async def cache_next_episode(request_info: RequestInfo, api_key: str, client: ht
                 end_byte=None,
                 cache_status=CacheStatus.PARTIAL,
                 raw_url_task=asyncio.create_task(
-                    get_or_cache_alist_raw_url(
-                        request_info, 
+                    alist_api.get_alist_raw_url(
+                        file_path=file.path,
+                        ua=request_info.headers.get("User-Agent"),
                         client=client
                         )
                     )

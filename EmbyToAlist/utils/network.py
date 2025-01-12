@@ -32,6 +32,7 @@ async def reverse_proxy(cache: AsyncGenerator[bytes, None],
                     await limiter.acquire(len(chunk))
                     yield chunk
                 logger.info("Cache exhausted, streaming from source")
+            
             raw_url = await url_task
             
             request_header['host'] = raw_url.split('/')[2]

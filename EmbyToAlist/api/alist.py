@@ -1,11 +1,25 @@
 from httpx import AsyncClient, ReadTimeout
 from fastapi import HTTPException
 from uvicorn.server import logger
+from aiocache import cached, Cache
 
 from ..config import ALIST_SERVER, ALIST_API_KEY
+from ..utils.helpers import get_time
 
-async def get_alist_raw_url(file_path, ua, client: AsyncClient) -> str:
-    """根据文件路径获取Alist Raw Url"""
+# return Alist Raw Url
+@get_time
+@cached(ttl=600, cache=Cache.MEMORY, key_builder=lambda f, file_path, ua, client: file_path+ua)
+async def get_alist_raw_url(file_path: str, ua: str, client: AsyncClient) -> str:
+    """创建或获取Alist Raw Url缓存，缓存时间为5分钟
+
+    Args:
+        file_path (str): Alist中的文件路径
+        ua (str): 请求头中的User-Agent，用于适配115等需要验证UA的网站
+        client (AsyncClient): HTTPX异步请求客户端
+
+    Returns:
+        str: Alist Raw Url
+    """
     
     alist_api_url = f"{ALIST_SERVER}/api/fs/get"
 
