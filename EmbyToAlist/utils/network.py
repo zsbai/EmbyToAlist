@@ -35,6 +35,7 @@ async def reverse_proxy(cache: AsyncGenerator[bytes, None],
             raw_url = await url_task
             
             request_header['host'] = raw_url.split('/')[2]
+            logger.debug(f"Requesting {raw_url} with headers {request_header}")
             async with client.stream("GET", raw_url, headers=request_header) as response:
                 response.raise_for_status()
                 if status_code == 206 and response.status_code != 206:

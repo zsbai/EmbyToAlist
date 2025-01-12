@@ -50,7 +50,9 @@ async def request_handler(expected_status_code: int,
         raw_url = await alist_raw_url_task
         return fastapi.responses.RedirectResponse(url=raw_url, status_code=302)
     
-    request_header = dict(request_info.headers)
+    request_header = {
+        "user-agent": request_info.headers.get("user-agent"),
+    }
     
     if expected_status_code == 206:
         start_byte = request_info.start_byte
