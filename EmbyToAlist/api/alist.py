@@ -49,7 +49,9 @@ async def get_alist_raw_url(file_path: str, ua: str, client: AsyncClient) -> str
     
     code = req['code']
     
-    if code == 200: return req['data']['raw_url']
+    if code == 200: 
+        logger.debug(f"Alist Raw Url: {req['data']['raw_url']}")
+        return req['data']['raw_url']
                
     elif code == 403:
         logger.error("Alist server response 403 Forbidden, Please check your Alist Key")

@@ -69,6 +69,7 @@ async def get_file_info(item_id, api_key, media_source_id, client: AsyncClient) 
                 container=i.get('Container', None),
                 # 获取15秒的缓存文件大小， 并取整
                 cache_file_size=int(i.get('Bitrate', 27962026) / 8 * 15),
+                name=i.get('Name'),
                 # 是否为远程流
                 is_strm=i.get('IsRemote', False)
             ))
@@ -83,6 +84,7 @@ async def get_file_info(item_id, api_key, media_source_id, client: AsyncClient) 
                 container=i.get('Container', None),
                 # 获取15秒的缓存文件大小， 并取整
                 cache_file_size=int(i.get('Bitrate', 27962026) / 8 * 15),
+                name=i.get('Name'),
                 # 是否为远程流
                 is_strm=i.get('IsRemote', False)
             )

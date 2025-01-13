@@ -73,11 +73,10 @@ async def write_cache_file(item_id, request_info: RequestInfo, req_header=None, 
     
     :return: 缓存是否成功
     """    
-    path = request_info.file_info.path
     file_size = request_info.file_info.size
     cache_size = request_info.file_info.cache_file_size
     
-    subdirname, dirname = get_hash_subdirectory_from_path(path, request_info.item_info.item_type)
+    subdirname, dirname = get_hash_subdirectory_from_path(request_info.file_info, request_info.item_info.item_type)
     
     # 计算缓存文件的结束点
     # 如果 start_point 大于 cache_size，endPoint 为文件末尾（将缓存尾部元数据）
@@ -140,6 +139,14 @@ async def write_cache_file(item_id, request_info: RequestInfo, req_header=None, 
                 logger.error(f"Write Cache Error {start_point}-{end_point}: Upstream return code: {resp.status_code}")
                 raise ValueError("Upstream response code not 206")
             
+            # 验证upstream返回的Content-Range是否与请求的范围匹配
+            # 避免出现尝试缓存整个文件的情况
+            if resp.headers.get('Content-Range', None) is not None:
+                resp_start, resp_end = map(int, resp.headers['Content-Range'].split(' ')[1].split('/')[0].split('-'))
+                if resp_start != start_point or resp_end != end_point:
+                    logger.error(f"Write Cache Error {start_point}-{end_point}: Content-Range mismatch")
+                    raise ValueError("Content-Range mismatch")
+                
             # 写入缓存文件
             async with aiofiles.open(cache_file_path, 'wb') as f:
                 async for chunk in resp.aiter_bytes(chunk_size=1024):
@@ -168,7 +175,7 @@ def read_cache_file(request_info: RequestInfo) -> AsyncGenerator[bytes, None]:
     
     :return: function read_file
     """    
-    subdirname, dirname = get_hash_subdirectory_from_path(request_info.file_info.path, request_info.item_info.item_type)
+    subdirname, dirname = get_hash_subdirectory_from_path(request_info.file_info, request_info.item_info.item_type)
     file_dir = os.path.join(CACHE_PATH, subdirname, dirname)
     
     # 查找与 startPoint 匹配的缓存文件，endPoint 为文件名的一部分
@@ -192,7 +199,7 @@ def get_cache_status(request_info: RequestInfo) -> bool:
     
     :param request_info: 请求信息
     """
-    subdirname, dirname = get_hash_subdirectory_from_path(request_info.file_info.path, request_info.item_info.item_type)
+    subdirname, dirname = get_hash_subdirectory_from_path(request_info.file_info, request_info.item_info.item_type)
     cache_dir = os.path.join(CACHE_PATH, subdirname, dirname)
     
     if os.path.exists(cache_dir) is False:
@@ -291,8 +298,7 @@ async def clean_cache(file_info: FileInfo, item_info: ItemInfo) -> bool:
     
     :return: bool: 是否删除成功
     """
-    path = file_info.path
-    subdirname, dirname = get_hash_subdirectory_from_path(path, item_info.item_type)
+    subdirname, dirname = get_hash_subdirectory_from_path(file_info, item_info.item_type)
     cache_dir = os.path.join(CACHE_PATH, subdirname, dirname)
     lock = get_cache_lock(subdirname, dirname)
     async with lock:

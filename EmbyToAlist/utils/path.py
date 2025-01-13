@@ -2,33 +2,42 @@ import hashlib
 import os
 
 from uvicorn.server import logger
-from typing import Tuple
 
 from ..config import MOUNT_PATH_PREFIX_REMOVE, MOUNT_PATH_PREFIX_ADD, IGNORE_PATH
+from ..models import FileInfo
+from typing import Tuple
 
-def get_hash_subdirectory_from_path(file_path, media_type) -> Tuple[str, str]:
+def get_hash_subdirectory_from_path(file_info: FileInfo, media_type) -> Tuple[str, str]:
     """
     计算给定文件路径的MD5哈希，并返回哈希值的前两位作为子目录名称 (Cache Key)。
     电影：只计算视频文件本身的上层文件夹路径
     电视剧：计算视频文件本身的上两层文件夹路径
 
-    :param file_path: 文件的路径
+    :param file_info: 文件信息
     :param media_type: 媒体类型，电影或剧集
     
     :return: 哈希值的前两个字符，作为子目录名称
     """
-    parts = file_path.split('/')
-    # 剧集
-    # Example: /mnt/TV/Name/Season 01/Name - S01E01 - Episode Name.mp4 -> Name/Season 01/Name - S01E01 - Episode Name.mp4
-    if media_type != 'movie':        
-        file_path: str = os.path.join("series", os.path.join(parts[-3], parts[-2], parts[-1]))
-    # 电影
-    # Example: /mnt/Movies/Name (Year)/Name (Year).mp4 -> Name (Year)/Name (Year).mp4
+    # 是否为strm文件，如果是的话，file_path是文件直链，需要额外处理
+    is_strm = file_info.is_strm
+    if is_strm:
+        # 对于 strm 文件，cache key为文件名称+文件大小+文件类型
+        cache_key: str = os.path.join("strm", os.path.join(file_info.name, str(file_info.size), file_info.container))
+        
     else:
-        file_path: str = os.path.join("movie", os.path.join(parts[-2], parts[-1]))
+        file_path: str = file_info.path
+        parts = file_path.split('/')
+        # 剧集
+        # Example: /mnt/TV/Name/Season 01/Name - S01E01 - Episode Name.mp4 -> Name/Season 01/Name - S01E01 - Episode Name.mp4
+        if media_type != 'movie':        
+            cache_key: str = os.path.join("series", os.path.join(parts[-3], parts[-2], parts[-1]))
+        # 电影
+        # Example: /mnt/Movies/Name (Year)/Name (Year).mp4 -> Name (Year)/Name (Year).mp4
+        else:
+            cache_key: str = os.path.join("movie", os.path.join(parts[-2], parts[-1]))
         
     hasher = hashlib.md5()
-    hasher.update(file_path.encode('utf-8'))
+    hasher.update(cache_key.encode('utf-8'))
     hash_digest = hasher.hexdigest()
     return hash_digest[:2], hash_digest  # 返回子目录名称和哈希值
 

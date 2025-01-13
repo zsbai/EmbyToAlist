@@ -35,6 +35,7 @@ class FileInfo:
     size: int
     container: str
     cache_file_size: int
+    name: str
     is_strm: bool = False
     
 @dataclass
