@@ -153,9 +153,15 @@ async def write_cache_file(item_id, request_info: RequestInfo, req_header=None, 
                 raise ValueError("Content-Range not found")
                 
             # 写入缓存文件
+            count = 0
             async with aiofiles.open(cache_file_path, 'wb') as f:
                 async for chunk in resp.aiter_bytes(chunk_size=1024):
                     await f.write(chunk)
+                    count += len(chunk)
+                    # 如果下载大于200MB，中断下载，并警告
+                    if count > 200*1024*1024:
+                        logger.warning(f"Write Cache Warning {start_point}-{end_point}: Downloaded more than 200MB, aborting.") 
+                        raise ValueError("Downloaded more than 200MB")
             logger.info(f"Write Cache file {start_point}-{end_point}: {item_id} has been written, file path: {cache_file_path}")
             
             # 删除写入标签文件并返回成功

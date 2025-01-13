@@ -54,6 +54,7 @@ async def request_handler(expected_status_code: int,
     request_header = {
         "user-agent": request_info.headers.get("user-agent"),
     }
+    resp_header["X-EmbyToAList-Cache"] = str(request_info.cache_status)
     
     if expected_status_code == 206:
         start_byte = request_info.start_byte

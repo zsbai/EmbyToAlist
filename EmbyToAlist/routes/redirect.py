@@ -59,13 +59,6 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
     raw_link_manager = RawLinkManager(file_info.path, request_info, requests_client)
     raw_link_manager.create_task()
     request_info.raw_link_manager = raw_link_manager
-    # request_info.raw_url_task = asyncio.create_task(
-    #     get_alist_raw_url(
-    #         file_path=file_info.path,
-    #         ua=request.headers.get("User-Agent"),
-    #         client=requests_client
-    #         )
-    #     )
     
     # 如果没有启用缓存，直接返回Alist Raw Url
     if not CACHE_ENABLE:
