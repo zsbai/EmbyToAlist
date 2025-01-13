@@ -44,7 +44,7 @@ async def request_handler(expected_status_code: int,
         background_tasks.add_task(cache_next_episode, request_info=request_info, api_key=request_info.api_key, client=client)
         logger.info("Started background task to cache next episode.")
         
-    alist_raw_url_task = await request_info.raw_url_manager.get_raw_url()
+    alist_raw_url_task = await request_info.raw_link_manager.get_raw_url()
 
     if expected_status_code == 416:
         return fastapi.responses.Response(status_code=416, headers=resp_header)
@@ -124,11 +124,12 @@ class RawLinkManager():
                  client: httpx.AsyncClient):
         self.path = path
         self.is_strm = request_info.file_info.is_strm
+        self.ua = request_info.headers.get("user-agent")
         self.client = client
         self.raw_url = None
         self.task = None
         
-    async def create_task(self) -> None:
+    def create_task(self) -> None:
         # 如果任务已存在:
         if self.task and not self.task.done():
             raise fastapi.HTTPException(status_code=500, detail="RawLinkManager task already exists")
@@ -142,7 +143,7 @@ class RawLinkManager():
             self.task = asyncio.create_task(
                                             get_alist_raw_url(
                                                 self.path,
-                                                self.request_info.headers.get("user-agent"),
+                                                self.ua,
                                                 self.client
                                                 )
                                             )
@@ -176,7 +177,7 @@ class RawLinkManager():
         
         return await self.task
         
-    async def on_task_done(self, task) -> None:
+    def on_task_done(self, task) -> None:
         try:
             self.raw_url = task.result()
         except asyncio.CancelledError:
@@ -185,6 +186,6 @@ class RawLinkManager():
             logger.error(f"Error: RawLinkManager task failed for path {self.path}, error: {e}")
             raise fastapi.HTTPException(status_code=500, detail="RawLinkManager task failed")
     
-    async def cancel_task(self) -> None:
+    def cancel_task(self) -> None:
         self.task.cancel()
         return
