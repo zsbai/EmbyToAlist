@@ -43,14 +43,12 @@ async def request_handler(expected_status_code: int,
     if request_info.cache_status != CacheStatus.UNKNOWN and background_tasks is not None and CACHE_NEXT_EPISODE is True:
         background_tasks.add_task(cache_next_episode, request_info=request_info, api_key=request_info.api_key, client=client)
         logger.info("Started background task to cache next episode.")
-        
-    alist_raw_url_task = await request_info.raw_link_manager.get_raw_url()
 
     if expected_status_code == 416:
         return fastapi.responses.Response(status_code=416, headers=resp_header)
     
     if expected_status_code == 302:
-        raw_url = await alist_raw_url_task
+        raw_url = await request_info.raw_link_manager.get_raw_url()
         return fastapi.responses.RedirectResponse(url=raw_url, status_code=302)
     
     request_header = {
@@ -74,7 +72,7 @@ async def request_handler(expected_status_code: int,
             request_header["Range"] = source_range_header
             return await reverse_proxy(
                 cache=None, 
-                url_task=alist_raw_url_task, 
+                raw_link_manager=request_info.raw_link_manager, 
                 request_header=request_header,
                 response_headers=resp_header,
                 client=client
@@ -94,7 +92,7 @@ async def request_handler(expected_status_code: int,
             request_header["Range"] = source_range_header
             return await reverse_proxy(
                 cache=cache, 
-                url_task=alist_raw_url_task, 
+                raw_link_manager=request_info.raw_link_manager, 
                 request_header=request_header,
                 response_headers=resp_header,
                 client=client
@@ -104,7 +102,7 @@ async def request_handler(expected_status_code: int,
         request_header["Range"] = f"bytes={request_info.file_info.cache_file_size}-"
         return await reverse_proxy(
             cache=cache,
-            url_task=alist_raw_url_task,
+            raw_link_manager=request_info.raw_link_manager,
             request_header=request_header,
             response_headers=resp_header,
             client=client,

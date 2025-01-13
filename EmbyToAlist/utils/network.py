@@ -3,10 +3,13 @@ import httpx
 from uvicorn.server import logger
 from aiolimiter import AsyncLimiter
 
-from typing import AsyncGenerator
+from typing import AsyncGenerator, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .handler import RawLinkManager
 
 async def reverse_proxy(cache: AsyncGenerator[bytes, None],
-                        url_task: str,
+                        raw_link_manager: 'RawLinkManager',
                         request_header: dict,
                         response_headers: dict,
                         client: httpx.AsyncClient,
@@ -33,7 +36,7 @@ async def reverse_proxy(cache: AsyncGenerator[bytes, None],
                     yield chunk
                 logger.info("Cache exhausted, streaming from source")
             
-            raw_url = await url_task
+            raw_url = await raw_link_manager.get_raw_url()
             
             request_header['host'] = raw_url.split('/')[2]
             logger.debug(f"Requesting {raw_url} with headers {request_header}")
