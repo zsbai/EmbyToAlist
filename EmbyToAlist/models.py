@@ -1,8 +1,10 @@
 from dataclasses import dataclass
 from enum import StrEnum
 
-from .utils.handler import RawLinkManager
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .utils.handler import RawLinkManager
 
 class CacheStatus(StrEnum):
     """ 本地缓存状态 """
