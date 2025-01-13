@@ -92,10 +92,8 @@ async def write_cache_file(item_id, request_info: RequestInfo, req_header=None, 
         return False
     
     # 获取Alist Raw Url
-    if request_info.raw_url is None:
-        raw_url = await request_info.raw_url_task
-    else:
-        raw_url = request_info.raw_url
+    raw_link_manager = request_info.raw_link_manager
+    raw_url = await raw_link_manager.get_raw_url()
     
     # 根据起始点和缓存大小确定缓存文件路径
     cache_file_name = f'cache_file_{start_point}_{end_point}'

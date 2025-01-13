@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from enum import StrEnum
-import asyncio
+
+from .utils.handler import RawLinkManager
 from typing import Optional
 
 class CacheStatus(StrEnum):
@@ -43,6 +44,5 @@ class RequestInfo:
     end_byte: Optional[int] = None
     cache_status: CacheStatus = CacheStatus.UNKNOWN
     api_key: Optional[str] = None
-    raw_url: Optional[str] = None
-    raw_url_task: Optional[asyncio.Task[str]] = None
+    raw_link_manager: Optional['RawLinkManager'] = None
     headers: Optional[dict] = None

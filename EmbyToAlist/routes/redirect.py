@@ -8,7 +8,7 @@ from ..models import RequestInfo, CacheStatus, ItemInfo, FileInfo
 from ..utils.helpers import extract_api_key, get_content_type
 from ..utils.path import should_redirect_to_alist
 from ..cache.media import read_cache_file, write_cache_file, get_cache_status
-from ..utils.handler import request_handler
+from ..utils.handler import request_handler, RawLinkManager
 from ..api.emby import get_item_info, get_file_info
 from ..api.alist import get_alist_raw_url
 
@@ -55,13 +55,16 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
         return fastapi.responses.RedirectResponse(url=redirected_url, status_code=302)
     
     # 如果满足alist直链条件，提前通过异步缓存alist直链
-    request_info.raw_url_task = asyncio.create_task(
-        get_alist_raw_url(
-            file_path=file_info.path,
-            ua=request.headers.get("User-Agent"),
-            client=requests_client
-            )
-        )
+    raw_link_manager = RawLinkManager(file_info.path, request_info, requests_client)
+    raw_link_manager.create_task()
+    request_info.raw_link_manager = raw_link_manager
+    # request_info.raw_url_task = asyncio.create_task(
+    #     get_alist_raw_url(
+    #         file_path=file_info.path,
+    #         ua=request.headers.get("User-Agent"),
+    #         client=requests_client
+    #         )
+    #     )
     
     # 如果没有启用缓存，直接返回Alist Raw Url
     if not CACHE_ENABLE:
