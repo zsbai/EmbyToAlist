@@ -135,6 +135,8 @@ async def write_cache_file(item_id, request_info: RequestInfo, req_header=None, 
         try:
             # 请求数据
             resp = await client.get(raw_url, headers=req_header)
+            resp.raise_for_status()
+            logger.debug(f"Caching {start_point}-{end_point}: upstream response headers: {resp.headers}")
             if resp.status_code != 206:
                 logger.error(f"Write Cache Error {start_point}-{end_point}: Upstream return code: {resp.status_code}")
                 raise ValueError("Upstream response code not 206")
@@ -146,6 +148,9 @@ async def write_cache_file(item_id, request_info: RequestInfo, req_header=None, 
                 if resp_start != start_point or resp_end != end_point:
                     logger.error(f"Write Cache Error {start_point}-{end_point}: Content-Range mismatch")
                     raise ValueError("Content-Range mismatch")
+            else:
+                logger.error(f"Write Cache Error {start_point}-{end_point}: Content-Range not found")
+                raise ValueError("Content-Range not found")
                 
             # 写入缓存文件
             async with aiofiles.open(cache_file_path, 'wb') as f:
