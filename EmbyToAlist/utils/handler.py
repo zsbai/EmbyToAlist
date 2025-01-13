@@ -109,3 +109,7 @@ async def request_handler(expected_status_code: int,
             )
     
     raise fastapi.HTTPException(status_code=500, detail=f"Unexpected argument: {expected_status_code}")
+
+
+async def raw_link_handler():
+    pass

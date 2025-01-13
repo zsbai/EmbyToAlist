@@ -7,6 +7,14 @@ from ..models import ItemInfo, FileInfo
 from ..utils.path import transform_file_path
 
 async def get_item_info(item_id, api_key, client) -> ItemInfo:
+    """获取Emby Item信息
+
+    :param item_id: Emby Item ID
+    :param api_key: Emby API Key
+    :param client: HTTPX异步请求客户端
+    
+    :return: 包含Item信息的dataclass
+    """
     item_info_api = f"{EMBY_SERVER}/emby/Items?api_key={api_key}&Ids={item_id}"
     logger.debug(f"Requesting Item Info: {item_info_api}")
     try:
@@ -34,12 +42,12 @@ async def get_item_info(item_id, api_key, client) -> ItemInfo:
 # used to get the file info from emby server
 async def get_file_info(item_id, api_key, media_source_id, client: AsyncClient) -> FileInfo:
     """
-    从Emby服务器获取文件信息
+    从Emby服务器获取文件播放信息
     
     :param item_id: Emby Item ID
     :param MediaSourceId: Emby MediaSource ID
     :param apiKey: Emby API Key
-    :return: 包含文件信息的字典
+    :return: 包含文件信息的dataclass
     """
     media_info_api = f"{EMBY_SERVER}/emby/Items/{item_id}/PlaybackInfo?MediaSourceId={media_source_id}&api_key={api_key}"
     logger.info(f"Requested Info URL: {media_info_api}")
@@ -60,7 +68,9 @@ async def get_file_info(item_id, api_key, media_source_id, client: AsyncClient) 
                 size=i.get('Size', 0),
                 container=i.get('Container', None),
                 # 获取15秒的缓存文件大小， 并取整
-                cache_file_size=int(i.get('Bitrate', 27962026) / 8 * 15)
+                cache_file_size=int(i.get('Bitrate', 27962026) / 8 * 15),
+                # 是否为远程流
+                is_strm=i.get('IsRemote', False)
             ))
         return all_source
 

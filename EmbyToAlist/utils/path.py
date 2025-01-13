@@ -8,7 +8,7 @@ from ..config import MOUNT_PATH_PREFIX_REMOVE, MOUNT_PATH_PREFIX_ADD, IGNORE_PAT
 
 def get_hash_subdirectory_from_path(file_path, media_type) -> Tuple[str, str]:
     """
-    计算给定文件路径的MD5哈希，并返回哈希值的前两位作为子目录名称。
+    计算给定文件路径的MD5哈希，并返回哈希值的前两位作为子目录名称 (Cache Key)。
     电影：只计算视频文件本身的上层文件夹路径
     电视剧：计算视频文件本身的上两层文件夹路径
 

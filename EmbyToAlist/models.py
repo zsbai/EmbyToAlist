@@ -27,12 +27,12 @@ class ItemInfo:
 
 @dataclass
 class FileInfo:
-    # status: bool
     path: str
     bitrate: int
     size: int
     container: str
     cache_file_size: int
+    is_strm: bool = False
     
 @dataclass
 class RequestInfo:
