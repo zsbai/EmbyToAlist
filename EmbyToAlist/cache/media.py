@@ -11,6 +11,7 @@ from ..config import CACHE_PATH
 from ..models import CacheStatus, FileInfo, ItemInfo, RequestInfo
 from ..utils.path import get_hash_subdirectory_from_path
 from ..utils.network import verify_download_response
+from ..utils.handler import RawLinkManager
 from ..api import emby as emby_api, alist as alist_api
 from typing import AsyncGenerator, Optional, Tuple
 
@@ -257,6 +258,7 @@ async def cache_next_episode(request_info: RequestInfo, api_key: str, client: ht
     if next_item_info is not None and next_item_info.season_id == request_info.item_info.season_id:
         next_file_info = await emby_api.get_file_info(next_item_info.item_id, api_key, media_source_id=None, client=client)
         for file in next_file_info:
+            raw_link_manager = RawLinkManager(file.path, request_info, client)
             next_request_info = RequestInfo(
                 file_info=file,
                 item_info=next_item_info,
@@ -264,14 +266,7 @@ async def cache_next_episode(request_info: RequestInfo, api_key: str, client: ht
                 start_byte=0,
                 end_byte=None,
                 cache_status=CacheStatus.PARTIAL,
-                raw_url_task=asyncio.create_task(
-                    alist_api.get_alist_raw_url(
-                        file_path=file.path,
-                        ua=request_info.headers.get("User-Agent"),
-                        client=client
-                        )
-                    )
-
+                raw_link_manager=raw_link_manager,
             )
             if get_cache_status(next_request_info):
                 logger.debug(f"Skip caching next episode for existing cache: {next_request_info.item_info.item_id}")
