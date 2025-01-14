@@ -1,5 +1,3 @@
-import asyncio
-
 import fastapi
 from uvicorn.server import logger
 
@@ -10,7 +8,6 @@ from ..utils.path import should_redirect_to_alist
 from ..cache.media import read_cache_file, write_cache_file, get_cache_status
 from ..utils.handler import request_handler, RawLinkManager
 from ..api.emby import get_item_info, get_file_info
-from ..api.alist import get_alist_raw_url
 
 router = fastapi.APIRouter()
 

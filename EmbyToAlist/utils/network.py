@@ -28,7 +28,7 @@ async def reverse_proxy(cache: AsyncGenerator[bytes, None],
     :return: fastapi.responses.StreamingResponse
     """
     limiter = AsyncLimiter(10*1024*1024, 1)
-    async def merged_stream():
+    async def merged_stream() -> AsyncGenerator[bytes, None]:
         try:
             if cache is not None:
                 async for chunk in cache:
@@ -41,7 +41,7 @@ async def reverse_proxy(cache: AsyncGenerator[bytes, None],
             request_header['host'] = raw_url.split('/')[2]
             logger.debug(f"Requesting {raw_url} with headers {request_header}")
             async with client.stream("GET", raw_url, headers=request_header) as response:
-                response.raise_for_status()
+                verify_download_response(response)
                 if status_code == 206 and response.status_code != 206:
                     raise ValueError(f"Expected 206 response, got {response.status_code}")
                 async for chunk in response.aiter_bytes():
@@ -56,3 +56,28 @@ async def reverse_proxy(cache: AsyncGenerator[bytes, None],
         headers=response_headers, 
         status_code=status_code
         )
+    
+async def verify_download_response(resposne: httpx.Response):
+    """验证status_code, 验证响应header
+
+    Args:
+        resposne (httpx.Response): HTTPX响应对象
+    """
+    if resposne.status_code == 416:
+        logger.warning("Reponse Verification: 416 Range Not Satisfiable")
+        logger.debug(f"Valid Range: {resposne.headers.get('Content-Range')}")
+        raise ValueError("Reponse Verification Failed: Range Not Satisfiable")
+    if resposne.status_code == 400:
+        logger.warning("Reponse Verification: 400 Bad Request")
+        logger.debug(f"Response Text: {resposne.text}")
+        logger.debug(f"Response Headers: {resposne.headers}")
+        raise ValueError("Reponse Verification Failed: 400 Bad Request")
+    
+    resposne.raise_for_status()
+    
+    content_type = resposne.headers.get('Content-Type')
+    if "application/json;" in content_type:
+        logger.warning("Reponse Verification: JSON Response")
+        logger.debug(f"Response Text: {resposne.text}")
+        raise ValueError("Reponse Verification Failed: JSON Response")
+    

@@ -10,6 +10,7 @@ from uvicorn.server import logger
 from ..config import CACHE_PATH
 from ..models import CacheStatus, FileInfo, ItemInfo, RequestInfo
 from ..utils.path import get_hash_subdirectory_from_path
+from ..utils.network import verify_download_response
 from ..api import emby as emby_api, alist as alist_api
 from typing import AsyncGenerator, Optional, Tuple
 
@@ -135,15 +136,11 @@ async def write_cache_file(item_id, request_info: RequestInfo, req_header=None, 
         try:
             # 请求数据
             async with client.stream("GET", raw_url, headers=req_header) as resp:
-                resp.raise_for_status()
+                verify_download_response(resp)
                 logger.debug(f"Caching {start_point}-{end_point}: upstream response headers: {resp.headers}")
                 if resp.status_code != 206:
                     logger.error(f"Write Cache Error {start_point}-{end_point}: Upstream return code: {resp.status_code}")
                     raise ValueError("Upstream response code not 206")
-                if resp.status_code == 416:
-                    logger.error(f"Write Cache Error {start_point}-{end_point}: Upstream return code: {resp.status_code}")
-                    logger.error(f"valid range: {resp.headers.get('Content-Range', None)}")
-                    raise ValueError("Upstream response code 416")
                 
                 # 验证upstream返回的Content-Range是否与请求的范围匹配
                 # 避免出现尝试缓存整个文件的情况
