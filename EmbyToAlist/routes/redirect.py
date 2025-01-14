@@ -54,7 +54,7 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
     
     # 如果满足alist直链条件，提前通过异步缓存alist直链
     raw_link_manager = RawLinkManager(file_info.path, request_info, requests_client)
-    raw_link_manager.create_task()
+    await raw_link_manager.create_task()
     request_info.raw_link_manager = raw_link_manager
     
     # 如果没有启用缓存，直接返回Alist Raw Url

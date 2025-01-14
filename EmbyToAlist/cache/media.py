@@ -11,9 +11,11 @@ from ..config import CACHE_PATH
 from ..models import CacheStatus, FileInfo, ItemInfo, RequestInfo
 from ..utils.path import get_hash_subdirectory_from_path
 from ..utils.network import verify_download_response
-from ..utils.handler import RawLinkManager
-from ..api import emby as emby_api, alist as alist_api
-from typing import AsyncGenerator, Optional, Tuple
+from ..api import emby as emby_api
+from typing import AsyncGenerator, Optional, Tuple, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..utils.handler import RawLinkManager
 
 cache_locks = WeakValueDictionary()
 

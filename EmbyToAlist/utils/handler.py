@@ -3,6 +3,7 @@ import asyncio
 import fastapi
 import httpx
 from uvicorn.server import logger
+from aiocache import cached, Cache
 
 from ..config import CACHE_NEXT_EPISODE
 from .network import reverse_proxy
@@ -128,7 +129,7 @@ class RawLinkManager():
         self.raw_url = None
         self.task = None
         
-    def create_task(self) -> None:
+    async def create_task(self) -> None:
         # 如果任务已存在:
         if self.task and not self.task.done():
             raise fastapi.HTTPException(status_code=500, detail="RawLinkManager task already exists")
@@ -150,6 +151,7 @@ class RawLinkManager():
         self.task.add_done_callback(self.on_task_done)
         return
     
+    @cached(ttl=600, cache=Cache.MEMORY, key_builder=lambda f, self: f"{self.path}:{self.ua}")
     async def precheck_strm(self) -> str:
         """预先请求strm文件地址，以便在请求时直接返回直链
 
@@ -161,7 +163,9 @@ class RawLinkManager():
             }) as response:
             if response.status_code in {302, 301}:
                 location = response.headers.get("Location")
-                if location: return location
+                if location: 
+                    logger.debug(f"Strm file redirected to {location}")
+                    return location
                 raise fastapi.HTTPException(status_code=500, detail="No Location header in response")
             elif response.status_code == 200:
                 return self.path
