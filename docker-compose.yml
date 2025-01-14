@@ -1,8 +1,9 @@
 services:
   embytoalist:
     image: ghcr.io/zsbai/embytoalist:latest
+    env_file:
+      - ".env"
     volumes:
-      - ./config.py:/app/config.py
       - /path/to/cache_dir:/path/to/cache_dir
     # host和port二选一
     network_mode: host

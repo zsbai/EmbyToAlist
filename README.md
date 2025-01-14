@@ -1,18 +1,19 @@
 # EmbyToAlist
 
-通过 Nginx 反向代理 + Python FastAPI + Alist 实现的 Emby 播放302重定向项目。
+通过 Nginx 反向代理 + Python FastAPI + Alist 实现的 Emby 播放302重定向项目, 支持STRM。
 
 灵感来自于 [MisakaFxxk/Go_stream](https://github.com/MisakaFxxk/Go_stream) ， [bpking1/embyExternalUrl](https://github.com/bpking1/embyExternalUrl)和[Nolovenodie](https://github.com/Nolovenodie)/[emby-direct](https://github.com/Nolovenodie/emby-direct)。
 
-更新：已通过 FastAPI 重构，相比于 Flask，响应速度有较大提升。
+* 更新：已通过 FastAPI 重构，相比于 Flask，响应速度有较大提升。
+
+* 更新： 更新至V2版本，增加对STRM的支持，配置项更改为环境变量。从V1升级到V2需要清空 Cache 文件夹。
 
 # 用途
 
 1. 关闭缓存
 
 * 播放时重定向到文件直链（不消耗本机流量）
-* 自定义后端直链代理域名，支持多个后端直链域名
-* 根据 Emby 主域名自动选择重定向的后端直链主域名
+* 支持 STRM
 * 少少许加快起播速度
 
 2. 花费少量本地空间开启视频开头缓存
@@ -34,16 +35,17 @@ $ git clone git@github.com:zsbai/EmbyToAlist.git && cd EmbyToAlist
 # 安装依赖
 $ pip install -r requirements.txt
 # 修改配置文件
-$ cp config.example.py config.py
-# 运行 main.py 启动
-$ python3 main.py
+$ cp .env.example .env
+# 运行 EmbyToAlist
+$ python3 -m EmbyToAlist
 ```
 
 ## 2. 通过docker compose部署
 ```
 # 获取docker-compose.yml文件 和 配置文件
-$ wget https://raw.githubusercontent.com/zsbai/EmbyToAlist/refs/heads/main/docker-compose.yml -O docker-compose.yml && wget https://raw.githubusercontent.com/zsbai/EmbyToAlist/refs/heads/main/config.example.py -O config.py
+$ wget https://raw.githubusercontent.com/zsbai/EmbyToAlist/refs/heads/main/docker-compose.yml -O docker-compose.yml && wget https://raw.githubusercontent.com/zsbai/EmbyToAlist/refs/heads/main/.env.example -O .env
 # 配置 docker-compose.yml 中的路径网络
+# 修改 .env 文件
 # 启动
 $ docker compose up -d
 # 更新
@@ -147,46 +149,24 @@ services:
 
 # 配置文件
 
-* `emby_server`：字符串，Emby 服务器地址（建议内网地址）
-* `emby_key`：字符串，Emby 服务器密钥（大多数情况下非必须）
-* `alist_server`：字符串，Alist服务器地址（建议内网地址）
-* `alist_key`：字符串，Alist 密钥 （必须）
+* `EMBY_SERVER`：字符串，Emby 服务器地址（建议内网地址）
+* `ALIST_SERVER`：字符串，Alist服务器地址（建议内网地址）
+* `ALIST_API_KEY`：字符串，Alist 密钥 （必须）
 
+* `IGNORE_PATH`：列表，本地文件路径开头，该路径下的媒体文件将不会通过 AList 重定向到文件直链。示例：["/local/media"]
 
-
-* `alist_download_url_replacement_map`：字典，Alist路径对应后端的自定义直链地址，无特殊需求可以留空
-
-  * 字典中键值的键：Alist中的文件路径
-  * 字典中键值的值：自定义直链地址。示例：https://download.example.com/tv/
-
-  
-
-* `not_redirect_paths`：列表，本地文件路径开头，该路径下的媒体文件将不会通过 AList 重定向到文件直链。示例：["/media"]
-
-
-
-* `convert_special_chars`：布尔值，已废弃，不建议使用。初始为了处理rclone挂载onedrive导致的特殊字符问题。
-* `special_chars_list`：列表，已废弃，不建议使用。同上，列表内为导致问题的特殊字符。
-
-
-
-* `convert_mount_path`：布尔值，是否进行挂载路径 -> Alist路径的转换。
-* `mount_path_prefix_remove`：字符串，挂载路径需要移除的路径前缀，示例："/mnt"。不需要请留空
-* `mount_path_prefix_add`：字符串，移除后需要额外添加的路径前缀，示例：“/media”。不需要请留空
+* `MOUNT_PATH_PREFIX_REMOVE`：字符串，挂载路径需要移除的路径前缀，示例："/mnt"。不需要请留空
+* `MOUNT_PATH_PREFIX_ADD`：字符串，移除后需要额外添加的路径前缀，示例：“/media”。不需要请留空
 
 对于上面的示例配置，路径将进行如下的转换："/mnt/电影/ABC/ABC.mkv" -> "/电影/ABC/ABC.mkv" -> "/media/电影/ABC/ABC.mkv"
 
 最后转换完成的路径应该是Alist中的路径。
 
+* `CACHE_ENABLE`：布尔值，是否缓存媒体文件的前15秒进行加速（通过码率计算）。
+* `CACHE_NEXT_EPISODE`：布尔值，在播放剧集的时候自动缓存下一集
+* `CACHE_PATH`：字符串，缓存存放的路径。
 
-
-* `enable_cache`：布尔值，是否缓存媒体文件的前15秒进行加速（通过码率计算）。
-* `enable_cache_next_episode`：布尔值，在播放剧集的时候自动缓存下一集
-* `cache_path`：字符串，缓存存放的路径。
-
-
-
-* `log_level`：字符串，日志等级。示例：“debug“。
+* `LOG_LEVEL`：字符串，日志等级。示例：“debug“。
 
 # 项目实现方法 & 逻辑解释
 
