@@ -156,7 +156,9 @@ class RawLinkManager():
         Returns:
             str: strm文件中的直链
         """
-        async with self.client.stream("GET", self.path) as response:
+        async with self.client.stream("GET", self.path, headers={
+            "user-agent": self.ua
+            }) as response:
             if response.status_code in {302, 301}:
                 location = response.headers.get("Location")
                 if location: return location
