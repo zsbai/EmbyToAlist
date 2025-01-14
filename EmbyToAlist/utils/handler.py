@@ -157,13 +157,14 @@ class RawLinkManager():
             str: strm文件中的直链
         """
         async with self.client.stream("GET", self.path) as response:
-            response.raise_for_status()
             if response.status_code in {302, 301}:
                 location = response.headers.get("Location")
                 if location: return location
                 raise fastapi.HTTPException(status_code=500, detail="No Location header in response")
-            if response.status_code == 200:
+            elif response.status_code == 200:
                 return self.path
+            else:
+                response.raise_for_status()
             
             raise fastapi.HTTPException(status_code=500, detail="Failed to request strm file")
     
