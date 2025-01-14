@@ -134,39 +134,43 @@ async def write_cache_file(item_id, request_info: RequestInfo, req_header=None, 
 
         try:
             # 请求数据
-            resp = await client.get(raw_url, headers=req_header)
-            resp.raise_for_status()
-            logger.debug(f"Caching {start_point}-{end_point}: upstream response headers: {resp.headers}")
-            if resp.status_code != 206:
-                logger.error(f"Write Cache Error {start_point}-{end_point}: Upstream return code: {resp.status_code}")
-                raise ValueError("Upstream response code not 206")
-            
-            # 验证upstream返回的Content-Range是否与请求的范围匹配
-            # 避免出现尝试缓存整个文件的情况
-            if resp.headers.get('Content-Range', None) is not None:
-                resp_start, resp_end = map(int, resp.headers['Content-Range'].split(' ')[1].split('/')[0].split('-'))
-                if resp_start != start_point or resp_end != end_point:
-                    logger.error(f"Write Cache Error {start_point}-{end_point}: Content-Range mismatch")
-                    raise ValueError("Content-Range mismatch")
-            else:
-                logger.error(f"Write Cache Error {start_point}-{end_point}: Content-Range not found")
-                raise ValueError("Content-Range not found")
+            async with client.stream("GET", raw_url, headers=req_header) as resp:
+                resp.raise_for_status()
+                logger.debug(f"Caching {start_point}-{end_point}: upstream response headers: {resp.headers}")
+                if resp.status_code != 206:
+                    logger.error(f"Write Cache Error {start_point}-{end_point}: Upstream return code: {resp.status_code}")
+                    raise ValueError("Upstream response code not 206")
+                if resp.status_code == 416:
+                    logger.error(f"Write Cache Error {start_point}-{end_point}: Upstream return code: {resp.status_code}")
+                    logger.error(f"valid range: {resp.headers.get('Content-Range', None)}")
+                    raise ValueError("Upstream response code 416")
                 
-            # 写入缓存文件
-            count = 0
-            async with aiofiles.open(cache_file_path, 'wb') as f:
-                async for chunk in resp.aiter_bytes(chunk_size=1024):
-                    await f.write(chunk)
-                    count += len(chunk)
-                    # 如果下载大于200MB，中断下载，并警告
-                    if count > 200*1024*1024:
-                        logger.warning(f"Write Cache Warning {start_point}-{end_point}: Downloaded more than 200MB, aborting.") 
-                        raise ValueError("Downloaded more than 200MB")
-            logger.info(f"Write Cache file {start_point}-{end_point}: {item_id} has been written, file path: {cache_file_path}")
-            
-            # 删除写入标签文件并返回成功
-            await aiofiles.os.remove(cache_write_tag_path)
-            return True
+                # 验证upstream返回的Content-Range是否与请求的范围匹配
+                # 避免出现尝试缓存整个文件的情况
+                if resp.headers.get('Content-Range', None) is not None:
+                    resp_start, resp_end = map(int, resp.headers['Content-Range'].split(' ')[1].split('/')[0].split('-'))
+                    if resp_start != start_point or resp_end != end_point:
+                        logger.error(f"Write Cache Error {start_point}-{end_point}: Content-Range mismatch")
+                        raise ValueError("Content-Range mismatch")
+                else:
+                    logger.error(f"Write Cache Error {start_point}-{end_point}: Content-Range not found")
+                    raise ValueError("Content-Range not found")
+                
+                # 写入缓存文件
+                count = 0
+                async with aiofiles.open(cache_file_path, 'wb') as f:
+                    async for chunk in resp.aiter_bytes(chunk_size=1024):
+                        await f.write(chunk)
+                        count += len(chunk)
+                        # 如果下载大于200MB，中断下载，并警告
+                        if count > 200*1024*1024:
+                            logger.warning(f"Write Cache Warning {start_point}-{end_point}: Downloaded more than 200MB, aborting.") 
+                            raise ValueError("Downloaded more than 200MB")
+                logger.info(f"Write Cache file {start_point}-{end_point}: {item_id} has been written, file path: {cache_file_path}")
+                
+                # 删除写入标签文件并返回成功
+                await aiofiles.os.remove(cache_write_tag_path)
+                return True
 
         except Exception as e:
             # 错误处理并删除缓存文件和标签文件
