@@ -1,7 +1,7 @@
 import hashlib
 import os
 
-from uvicorn.server import logger
+from loguru import logger
 
 from ..config import MOUNT_PATH_PREFIX_REMOVE, MOUNT_PATH_PREFIX_ADD, IGNORE_PATH
 from ..models import FileInfo

@@ -1,6 +1,6 @@
 from httpx import AsyncClient
 from fastapi import HTTPException
-from uvicorn.server import logger
+from loguru import logger
 
 from ..config import EMBY_SERVER
 from ..models import ItemInfo, FileInfo

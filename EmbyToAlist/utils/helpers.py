@@ -3,7 +3,7 @@ import asyncio
 
 import fastapi
 import httpx
-from uvicorn.server import logger
+from loguru import logger
 from aiocache import cached, Cache
 
 from ..api.alist import get_alist_raw_url

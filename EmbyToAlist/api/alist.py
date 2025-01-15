@@ -1,6 +1,6 @@
 from httpx import AsyncClient, ReadTimeout
 from fastapi import HTTPException
-from uvicorn.server import logger
+from loguru import logger
 from aiocache import cached, Cache
 
 from ..config import ALIST_SERVER, ALIST_API_KEY

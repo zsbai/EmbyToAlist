@@ -5,7 +5,7 @@ from weakref import WeakValueDictionary
 import aiofiles
 import aiofiles.os
 import httpx
-from uvicorn.server import logger
+from loguru import logger
 
 from ..config import CACHE_PATH
 from ..models import CacheStatus, FileInfo, ItemInfo, RequestInfo

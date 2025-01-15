@@ -1,6 +1,6 @@
 import fastapi
 import httpx
-from uvicorn.server import logger
+from loguru import logger
 from aiolimiter import AsyncLimiter
 
 from typing import AsyncGenerator, TYPE_CHECKING

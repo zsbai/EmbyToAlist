@@ -1,6 +1,6 @@
 import fastapi
 import httpx
-from uvicorn.server import logger
+from loguru import logger
 
 from ..config import CACHE_NEXT_EPISODE
 from .network import reverse_proxy

@@ -1,5 +1,5 @@
 import fastapi
-from uvicorn.server import logger
+from loguru import logger
 
 from ..config import CACHE_ENABLE
 from ..models import RequestInfo, CacheStatus, ItemInfo, FileInfo
