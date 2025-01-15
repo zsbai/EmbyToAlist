@@ -4,7 +4,7 @@ from enum import StrEnum
 from typing import Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .utils.handler import RawLinkManager
+    from .utils.helpers import RawLinkManager
 
 class CacheStatus(StrEnum):
     """ 本地缓存状态 """

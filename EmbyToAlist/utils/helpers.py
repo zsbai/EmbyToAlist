@@ -1,7 +1,13 @@
 import re
+import asyncio
 
 import fastapi
+import httpx
 from uvicorn.server import logger
+from aiocache import cached, Cache
+
+from ..api.alist import get_alist_raw_url
+from ..models import RequestInfo
 
 # a wrapper function to get the time of the function
 def get_time(func):
@@ -63,3 +69,85 @@ def match_with_regex(pattern, target_string):
             return False
     else:
         raise ValueError("Invalid regex pattern")
+    
+class RawLinkManager():
+    """管理alist直链获取任务
+    支持普通文件和strm文件
+    """
+    def __init__(self, 
+                 path: str,
+                 request_info: RequestInfo,
+                 client: httpx.AsyncClient):
+        self.path = path
+        self.is_strm = request_info.file_info.is_strm
+        self.ua = request_info.headers.get("user-agent")
+        self.client = client
+        self.raw_url = None
+        self.task = None
+        
+    async def create_task(self) -> None:
+        # 如果任务已存在:
+        if self.task and not self.task.done():
+            raise fastapi.HTTPException(status_code=500, detail="RawLinkManager task already exists")
+        # 如果已经获取到直链:
+        if self.raw_url is not None:
+            return
+
+        if self.is_strm:
+            self.task = asyncio.create_task(self.precheck_strm())
+        else:
+            self.task = asyncio.create_task(
+                                            get_alist_raw_url(
+                                                self.path,
+                                                self.ua,
+                                                self.client
+                                                )
+                                            )
+            
+        self.task.add_done_callback(self.on_task_done)
+        return
+    
+    @cached(ttl=600, cache=Cache.MEMORY, key_builder=lambda f, self: f"{self.path}:{self.ua}")
+    async def precheck_strm(self) -> str:
+        """预先请求strm文件地址，以便在请求时直接返回直链
+
+        Returns:
+            str: strm文件中的直链
+        """
+        async with self.client.stream("GET", self.path, headers={
+            "user-agent": self.ua
+            }) as response:
+            if response.status_code in {302, 301}:
+                location = response.headers.get("Location")
+                if location: 
+                    logger.debug(f"Strm file redirected to {location}")
+                    return location
+                raise fastapi.HTTPException(status_code=500, detail="No Location header in response")
+            elif response.status_code == 200:
+                return self.path
+            else:
+                response.raise_for_status()
+            
+            raise fastapi.HTTPException(status_code=500, detail="Failed to request strm file")
+    
+    async def get_raw_url(self) -> str:
+        if self.raw_url is not None:
+              return self.raw_url
+          
+        if self.task is None:
+            raise fastapi.HTTPException(status_code=500, detail="RawLinkManager task not created")
+        
+        return await self.task
+        
+    def on_task_done(self, task) -> None:
+        try:
+            self.raw_url = task.result()
+        except asyncio.CancelledError:
+            logger.warning("RawLinkManager task was cancelled")
+        except Exception as e:
+            logger.error(f"Error: RawLinkManager task failed for path {self.path}, error: {e}")
+            raise fastapi.HTTPException(status_code=500, detail="RawLinkManager task failed")
+    
+    def cancel_task(self) -> None:
+        self.task.cancel()
+        return

@@ -3,10 +3,10 @@ from uvicorn.server import logger
 
 from ..config import CACHE_ENABLE
 from ..models import RequestInfo, CacheStatus, ItemInfo, FileInfo
-from ..utils.helpers import extract_api_key, get_content_type
+from ..utils.helpers import extract_api_key, get_content_type, RawLinkManager
 from ..utils.path import should_redirect_to_alist
 from ..cache.media import read_cache_file, write_cache_file, get_cache_status
-from ..utils.handler import request_handler, RawLinkManager
+from ..utils.handler import request_handler
 from ..api.emby import get_item_info, get_file_info
 
 router = fastapi.APIRouter()

@@ -6,7 +6,7 @@ from aiolimiter import AsyncLimiter
 from typing import AsyncGenerator, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .handler import RawLinkManager
+    from .helpers import RawLinkManager
 
 async def reverse_proxy(cache: AsyncGenerator[bytes, None],
                         raw_link_manager: 'RawLinkManager',

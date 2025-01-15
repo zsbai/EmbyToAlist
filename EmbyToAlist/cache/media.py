@@ -15,7 +15,7 @@ from ..api import emby as emby_api
 from typing import AsyncGenerator, Optional, Tuple, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from ..utils.handler import RawLinkManager
+    from ..utils.helpers import RawLinkManager
 
 cache_locks = WeakValueDictionary()
 
