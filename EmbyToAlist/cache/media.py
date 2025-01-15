@@ -200,7 +200,7 @@ def read_cache_file(request_info: RequestInfo) -> AsyncGenerator[bytes, None]:
                 # 调整 end_point 的值
                 adjusted_end_point = None if request_info.cache_status == CacheStatus.PARTIAL or request_info.cache_status == CacheStatus.HIT_TAIL else request_info.end_byte - request_info.start_byte
                 
-                logger.info(f"Read Cache: {os.path.join(file_dir, file)}")
+                logger.debug(f"Read Cache: {os.path.join(file_dir, file)}")
 
                 return read_file(os.path.join(file_dir, file), request_info.start_byte - range_start, adjusted_end_point)
             
@@ -260,6 +260,7 @@ async def cache_next_episode(request_info: RequestInfo, api_key: str, client: ht
         next_file_info = await emby_api.get_file_info(next_item_info.item_id, api_key, media_source_id=None, client=client)
         for file in next_file_info:
             raw_link_manager = RawLinkManager(file.path, request_info, client)
+            await raw_link_manager.create_task()
             next_request_info = RequestInfo(
                 file_info=file,
                 item_info=next_item_info,
@@ -270,7 +271,7 @@ async def cache_next_episode(request_info: RequestInfo, api_key: str, client: ht
                 raw_link_manager=raw_link_manager,
             )
             if get_cache_status(next_request_info):
-                logger.debug(f"Skip caching next episode for existing cache: {next_request_info.item_info.item_id}")
+                logger.debug(f"Skip caching next episode for existing cache: {next_request_info.item_info.item_id}, cause: Cache exists")
                 return False
             else:
                 await write_cache_file(next_episode_id, next_request_info, req_header=request_info.headers, client=client)

@@ -57,7 +57,7 @@ async def reverse_proxy(cache: AsyncGenerator[bytes, None],
         status_code=status_code
         )
     
-async def verify_download_response(resposne: httpx.Response):
+def verify_download_response(resposne: httpx.Response):
     """验证status_code, 验证响应header
 
     Args:
