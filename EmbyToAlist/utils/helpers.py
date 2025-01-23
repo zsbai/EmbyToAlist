@@ -74,6 +74,8 @@ class RawLinkManager():
     """管理alist直链获取任务
     支持普通文件和strm文件
     """
+    cache = Cache(Cache.MEMORY)
+    
     def __init__(self, 
                  path: str,
                  request_info: RequestInfo,
@@ -88,26 +90,32 @@ class RawLinkManager():
     async def create_task(self) -> None:
         # 如果任务已存在:
         if self.task and not self.task.done():
-            raise fastapi.HTTPException(status_code=500, detail="RawLinkManager task already exists")
+            return
+        
+        self.raw_url = await self.cache.get(f"raw_url:{self.path}:{self.ua}", None)
+        
         # 如果已经获取到直链:
         if self.raw_url is not None:
             return
 
-        if self.is_strm:
-            self.task = asyncio.create_task(self.precheck_strm())
-        else:
-            self.task = asyncio.create_task(
-                                            get_alist_raw_url(
-                                                self.path,
-                                                self.ua,
-                                                self.client
-                                                )
-                                            )
+        self.task = asyncio.create_task(self.request_raw_url())
             
         self.task.add_done_callback(self.on_task_done)
         return
     
-    @cached(ttl=600, cache=Cache.MEMORY, key_builder=lambda f, self: f"{self.path}:{self.ua}")
+    async def request_raw_url(self) -> str:
+        if self.is_strm:
+            raw_url = await self.precheck_strm()
+        else:
+            raw_url = await get_alist_raw_url(
+                self.path,
+                self.ua,
+                self.client
+                )
+        await self.cache.set(f"raw_url:{self.path}:{self.ua}", raw_url, ttl=600)
+        return raw_url
+        
+    
     async def precheck_strm(self) -> str:
         """预先请求strm文件地址，以便在请求时直接返回直链
 
@@ -124,6 +132,7 @@ class RawLinkManager():
                     return location
                 raise fastapi.HTTPException(status_code=500, detail="No Location header in response")
             elif response.status_code == 200:
+                # path中存储的是直链
                 return self.path
             else:
                 response.raise_for_status()
@@ -132,21 +141,25 @@ class RawLinkManager():
     
     async def get_raw_url(self) -> str:
         if self.raw_url is not None:
-              return self.raw_url
+            return self.raw_url
+          
+        if await self.cache.exists(f"raw_url:{self.path}:{self.ua}"):
+            self.raw_url = await self.cache.get(f"raw_url:{self.path}:{self.ua}")
+            logger.debug(f"Cache hit for {self.path}")
+            return self.raw_url
           
         if self.task is None:
             raise fastapi.HTTPException(status_code=500, detail="RawLinkManager task not created")
-        
-        return await self.task
-        
-    def on_task_done(self, task) -> None:
         try:
-            self.raw_url = task.result()
+            return await self.task
         except asyncio.CancelledError:
             logger.warning("RawLinkManager task was cancelled")
         except Exception as e:
             logger.error(f"Error: RawLinkManager task failed for path {self.path}, error: {e}")
-            raise fastapi.HTTPException(status_code=500, detail="RawLinkManager task failed")
+            raise fastapi.HTTPException(status_code=500, detail="RawLinkManager task")
+        
+    def on_task_done(self, task) -> None:
+        self.raw_url = task.result()
     
     def cancel_task(self) -> None:
         self.task.cancel()

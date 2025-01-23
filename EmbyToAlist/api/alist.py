@@ -1,12 +1,10 @@
 from httpx import AsyncClient, ReadTimeout
 from fastapi import HTTPException
 from loguru import logger
-from aiocache import cached, Cache
 
 from ..config import ALIST_SERVER, ALIST_API_KEY
 
 # return Alist Raw Url
-@cached(ttl=600, cache=Cache.MEMORY, key_builder=lambda f, file_path, ua, client: file_path+ua)
 async def get_alist_raw_url(file_path: str, ua: str, client: AsyncClient) -> str:
     """创建或获取Alist Raw Url缓存，缓存时间为5分钟
 
