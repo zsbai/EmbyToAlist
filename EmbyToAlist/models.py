@@ -26,7 +26,21 @@ class ItemInfo:
     
     item_id: int
     item_type: str
+    """episode or movie"""
+    tvshows_info: Optional['TVShowsInfo'] = None
+    """ 剧集信息, 如果type是movie，则为None """
+    
+@dataclass
+class TVShowsInfo:
+    """ 剧集信息 """
+    
+    series_id: int
+    """ 剧集id"""
     season_id: int
+    """ 季id """
+    index_number: int
+    """ 剧集在季中的顺序 """
+    
 
 @dataclass
 class FileInfo:

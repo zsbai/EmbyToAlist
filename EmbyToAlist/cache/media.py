@@ -12,9 +12,8 @@ from ..models import CacheStatus, FileInfo, ItemInfo, RequestInfo
 from ..utils.path import get_hash_subdirectory_from_path
 from ..utils.network import verify_download_response
 from ..utils.helpers import RawLinkManager
-
 from ..api import emby as emby_api
-from typing import AsyncGenerator, Optional, Tuple
+from typing import AsyncGenerator, Optional    
 
 cache_locks = WeakValueDictionary()
 
@@ -94,7 +93,7 @@ async def write_cache_file(item_id, request_info: RequestInfo, req_header=None, 
         return False
     
     # 获取Alist Raw Url
-    raw_link_manager = request_info.raw_link_manager
+    raw_link_manager: RawLinkManager = request_info.raw_link_manager
     raw_url = await raw_link_manager.get_raw_url()
     
     # 根据起始点和缓存大小确定缓存文件路径
@@ -248,36 +247,45 @@ async def cache_next_episode(request_info: RequestInfo, api_key: str, client: ht
     :param request_info: 请求信息
     :param api_key: Emby API Key
     :param client: HTTPX异步客户端
+    
+    :return: 是否缓存成功
     """
     if request_info.item_info.item_type != 'episode': 
         logger.debug(f"Skip caching next episode for non-episode item: {request_info.item_info.item_id}")
         return False
     
-    next_episode_id = request_info.item_info.item_id + 1
-    next_item_info = await emby_api.get_item_info(next_episode_id, api_key, client)
-    # 如果找不到下一集，不缓存；非同季度，不缓存
-    if next_item_info is not None and next_item_info.season_id == request_info.item_info.season_id:
-        next_file_info = await emby_api.get_file_info(next_item_info.item_id, api_key, media_source_id=None, client=client)
-        for file in next_file_info:
-            raw_link_manager = RawLinkManager(file.path, request_info, client)
-            await raw_link_manager.create_task()
-            next_request_info = RequestInfo(
-                file_info=file,
-                item_info=next_item_info,
-                host_url=request_info.host_url,
-                start_byte=0,
-                end_byte=None,
-                cache_status=CacheStatus.PARTIAL,
-                raw_link_manager=raw_link_manager,
-            )
-            if get_cache_status(next_request_info):
-                logger.debug(f"Skip caching next episode for existing cache: {next_request_info.item_info.item_id}, cause: Cache exists")
-                return False
-            else:
-                await write_cache_file(next_episode_id, next_request_info, req_header=request_info.headers, client=client)
-        return True
+    series_id = request_info.item_info.tvshows_info.series_id
+    season_id = request_info.item_info.tvshows_info.season_id
     
-def verify_cache_file(file_info: FileInfo, cache_file_range: Tuple[int, int]) -> bool:
+    next_episode_info: ItemInfo = await emby_api.get_next_episode_item_info(series_id, season_id, request_info.item_info.item_id, api_key, client)
+    if next_episode_info is None:
+        logger.debug(f"Skip caching next episode for non-existing next episode: {request_info.item_info.item_id}")
+        return False
+    
+    next_file_info: list[FileInfo] = await emby_api.get_file_info(next_episode_info.item_id, api_key, media_source_id=None, client=client)
+    
+    for file in next_file_info:
+        raw_link_manager = RawLinkManager(file.path, request_info, client)
+        next_request_info = RequestInfo(
+            file_info=file,
+            item_info=next_episode_info,
+            host_url=request_info.host_url,
+            start_byte=0,
+            end_byte=None,
+            cache_status=CacheStatus.PARTIAL,
+            raw_link_manager=raw_link_manager,
+        )
+        logger.debug(f"Next Episode Info: {str(next_request_info.item_info)}")
+        
+        if get_cache_status(next_request_info):
+            logger.debug(f"Skip caching next episode for existing cache: {next_request_info.item_info.item_id}, cause: Cache exists")
+            return False
+        else:
+            await raw_link_manager.create_task()
+            await write_cache_file(next_episode_info.item_id, next_request_info, req_header=request_info.headers, client=client)
+            return True
+    
+def verify_cache_file(file_info: FileInfo, cache_file_range: tuple[int, int]) -> bool:
     """
     验证缓存文件是否符合 Emby 文件大小，筛选出错误缓存文件
     
