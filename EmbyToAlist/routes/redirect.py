@@ -1,7 +1,7 @@
 import fastapi
 from loguru import logger
 
-from ..config import CACHE_ENABLE
+from ..config import CACHE_ENABLE, FORCE_CLIENT_RECONNECT
 from ..models import RequestInfo, CacheStatus, ItemInfo, FileInfo
 from ..utils.helpers import extract_api_key, get_content_type, RawLinkManager
 from ..utils.path import should_redirect_to_alist
@@ -229,6 +229,14 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
                 )
     else:
         request_info.cache_status = CacheStatus.MISS
+        
+        if FORCE_CLIENT_RECONNECT:
+            return await request_handler(
+                expected_status_code=302, 
+                request_info=request_info, 
+                background_tasks=background_tasks, 
+                client=requests_client
+                )
         
         resp_headers = {
             'Content-Type': get_content_type(file_info.container),

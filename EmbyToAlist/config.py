@@ -16,5 +16,6 @@ MOUNT_PATH_PREFIX_ADD = env.str("MOUNT_PATH_PREFIX_ADD", default="")
 CACHE_ENABLE = env.bool("CACHE_ENABLE", default=False)
 CACHE_NEXT_EPISODE = env.bool("CACHE_NEXT_EPISODE", default=False)
 CACHE_PATH = env.str("CACHE_PATH", default="./cache")
+FORCE_CLIENT_RECONNECT = env.bool("FORCE_CLIENT_RECONNECT", default=False)
 
 LOG_LEVEL = env.str("LOG_LEVEL", default="info").lower()

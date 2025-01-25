@@ -3,6 +3,7 @@ import httpx
 from loguru import logger
 from aiolimiter import AsyncLimiter
 
+from ..config import FORCE_CLIENT_RECONNECT
 from typing import AsyncGenerator, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -44,9 +45,21 @@ async def reverse_proxy(cache: AsyncGenerator[bytes, None],
                 verify_download_response(response)
                 if status_code == 206 and response.status_code != 206:
                     raise ValueError(f"Expected 206 response, got {response.status_code}")
+                
+                count = 0
                 async for chunk in response.aiter_bytes():
+                    # 从后端传输大于1MB的数据后，强制断开连接
+                    if FORCE_CLIENT_RECONNECT:
+                        if cache is not None and count > 1024*1024:
+                            raise ForcedReconnectError()
+                    
                     await limiter.acquire(len(chunk))
+                    count += len(chunk)
                     yield chunk
+                    
+        except ForcedReconnectError as e:
+            logger.info(f"Expected ForcedReconnectError: {e}")
+            raise fastapi.HTTPException(status_code=500, detail="Reverse Proxy Failed")
         except Exception as e:
             logger.error(f"Reverse_proxy failed, {e}")
             raise fastapi.HTTPException(status_code=500, detail="Reverse Proxy Failed")
@@ -81,3 +94,9 @@ def verify_download_response(resposne: httpx.Response):
         logger.debug(f"Response Text: {resposne.text}")
         raise ValueError("Reponse Verification Failed: JSON Response")
     
+
+class ForcedReconnectError(Exception):
+    """预期异常，用于强制播放器重新请求"""
+    def __init__(self, message="Expected Error, Force Break the Connection"):
+        self.message = message
+        super().__init__(message)
