@@ -23,6 +23,7 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
     requests_client = request.app.state.requests_client
     
     api_key = extract_api_key(request)
+    # jellyfin use mediaSourceId, emby use MediaSourceId
     media_source_id = request.query_params.get('MediaSourceId') if 'MediaSourceId' in request.query_params else request.query_params.get('mediaSourceId')
 
     if not media_source_id:

@@ -40,11 +40,17 @@ def extract_api_key(request: fastapi.Request):
     """从请求中提取API密钥"""
     api_key = request.query_params.get('api_key') or request.query_params.get('X-Emby-Token')
     if not api_key:
+        # For Infuse
         auth_header = request.headers.get('X-Emby-Authorization')
         if auth_header:
             match_token = re.search(r'Token="([^"]+)"', auth_header)
             if match_token:
                 api_key = match_token.group(1)
+        else:
+            # Sometimes Fileball uses x-emby-token header
+            auth_header = request.headers.get('x-emby-token')
+            if auth_header:
+                api_key = auth_header
     return api_key
 
 def validate_regex(word: str) -> bool:
