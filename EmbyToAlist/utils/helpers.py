@@ -160,13 +160,10 @@ class RawLinkManager():
             return await self.task
         except asyncio.CancelledError:
             logger.warning("RawLinkManager task was cancelled")
+            raise fastapi.HTTPException(status_code=500, detail="RawLinkManager task was cancelled")
         except Exception as e:
             logger.error(f"Error: RawLinkManager task failed for path {self.path}, error: {e}")
             raise fastapi.HTTPException(status_code=500, detail="RawLinkManager task")
         
     def on_task_done(self, task) -> None:
         self.raw_url = task.result()
-    
-    def cancel_task(self) -> None:
-        self.task.cancel()
-        return

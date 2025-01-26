@@ -141,7 +141,7 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
         resp_end_byte = file_info.size - 1 if end_byte is None or end_byte > cache_end_byte else cache_end_byte
         
         if get_cache_status(request_info):
-            resp_headers = {
+            resp_header = {
                 'Content-Type': get_content_type(file_info.container),
                 'Accept-Ranges': 'bytes',
                 'Content-Range': f"bytes {start_byte}-{resp_end_byte}/{file_info.size}",
@@ -156,7 +156,7 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
                 expected_status_code=206, 
                 cache=read_cache_file(request_info), 
                 request_info=request_info, 
-                resp_header=resp_headers, 
+                resp_header=resp_header, 
                 background_tasks=background_tasks, 
                 client=requests_client
                 )
@@ -191,7 +191,7 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
                 resp_end_byte = end_byte
                 resp_file_size = end_byte - start_byte + 1
 
-            resp_headers = {
+            resp_header = {
                 'Content-Type': get_content_type(file_info.container),
                 'Accept-Ranges': 'bytes',
                 'Content-Range': f"bytes {start_byte}-{resp_end_byte}/{file_info.size}",
@@ -206,7 +206,7 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
             logger.debug("Response Content-Length: " + f'{resp_file_size}')
             return fastapi.responses.StreamingResponse(
                 read_cache_file(request_info),
-                headers=resp_headers,
+                headers=resp_header,
                 status_code=206
                 )
         else:
@@ -238,7 +238,7 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
                 client=requests_client
                 )
         
-        resp_headers = {
+        resp_header = {
             'Content-Type': get_content_type(file_info.container),
             'Accept-Ranges': 'bytes',
             'Content-Range': f'bytes {start_byte}-{file_info.size - 1}/{file_info.size}',
@@ -251,7 +251,7 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
         return await request_handler(
             expected_status_code=206, 
             request_info=request_info, 
-            resp_header=resp_headers, 
+            resp_header=resp_header, 
             background_tasks=background_tasks, 
             client=requests_client
             )
