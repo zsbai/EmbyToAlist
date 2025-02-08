@@ -4,7 +4,7 @@ from loguru import logger
 from aiolimiter import AsyncLimiter
 
 from ..config import FORCE_CLIENT_RECONNECT
-from typing import AsyncGenerator, TYPE_CHECKING
+from typing import AsyncGenerator, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .helpers import RawLinkManager
@@ -13,7 +13,6 @@ async def reverse_proxy(cache: AsyncGenerator[bytes, None],
                         raw_link_manager: 'RawLinkManager',
                         request_header: dict,
                         response_headers: dict,
-                        client: httpx.AsyncClient,
                         status_code: int = 206
                         ):
     """
@@ -28,6 +27,7 @@ async def reverse_proxy(cache: AsyncGenerator[bytes, None],
     
     :return: fastapi.responses.StreamingResponse
     """
+    client = ClientManager.get_client()
     limiter = AsyncLimiter(10*1024*1024, 1)
     async def merged_stream() -> AsyncGenerator[bytes, None]:
         try:
@@ -100,3 +100,23 @@ class ForcedReconnectError(Exception):
     def __init__(self, message="Expected Error, Force Break the Connection"):
         self.message = message
         super().__init__(message)
+
+class ClientManager():
+    _client: Optional[httpx.AsyncClient] = None
+    
+    @classmethod
+    def init_client(cls):
+        if cls._client is None:
+            cls._client = httpx.AsyncClient()
+    
+    @classmethod
+    def get_client(cls):
+        if cls._client is None:
+            logger.error("Request Client not initialized")
+            raise ValueError("Request Client not initialized")
+        return cls._client
+    
+    @classmethod
+    async def close_client(cls):
+        if cls._client is not None:
+            cls._client.aclose()

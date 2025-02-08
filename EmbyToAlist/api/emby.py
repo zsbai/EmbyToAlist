@@ -5,16 +5,17 @@ from loguru import logger
 from ..config import EMBY_SERVER
 from ..models import ItemInfo, FileInfo, TVShowsInfo
 from ..utils.path import transform_file_path
+from ..utils.network import ClientManager
 
-async def get_item_info(item_id, api_key, client) -> ItemInfo:
+async def get_item_info(item_id, api_key) -> ItemInfo:
     """获取Emby Item信息
 
     :param item_id: Emby Item ID
     :param api_key: Emby API Key
-    :param client: HTTPX异步请求客户端
     
     :return: 包含Item信息的dataclass
     """
+    client = ClientManager.get_client()
     item_info_api = f"{EMBY_SERVER}/emby/Items?api_key={api_key}&Ids={item_id}"
     logger.debug(f"Requesting Item Info: {item_info_api}")
     try:
@@ -48,18 +49,18 @@ async def get_item_info(item_id, api_key, client) -> ItemInfo:
         tvshows_info=tvshows_info
     )
 
-async def get_series_info(series_id: int, season_id: int, api_key: str, client: AsyncClient) -> list[ItemInfo]:
+async def get_series_info(series_id: int, season_id: int, api_key: str) -> list[ItemInfo]:
     """获取剧集某一个季的所有Item信息
 
     Args:
         series_id (int): Emby Series ID
         season_id (int): Emby Season ID
         api_key (str): Emby API Key
-        client (AsyncClient): HTTPX异步请求客户端
 
     Returns:
         list[ItemInfo]: 包含Item信息的dataclass列表
     """
+    client = ClientManager.get_client()
     shows_info_api = f"{EMBY_SERVER}/emby/Shows/{series_id}/Episodes?SeasonId={season_id}&api_key={api_key}"
     
     try:
@@ -83,7 +84,7 @@ async def get_series_info(series_id: int, season_id: int, api_key: str, client: 
         ))
     return items
         
-async def get_next_episode_item_info(series_id: int, season_id: int, item_id: int, api_key: str, client: AsyncClient) -> ItemInfo | None:
+async def get_next_episode_item_info(series_id: int, season_id: int, item_id: int, api_key: str) -> ItemInfo | None:
     """获取剧集当前一季的下一集信息，并不会返回下一季的第一集
 
     Args:
@@ -91,13 +92,12 @@ async def get_next_episode_item_info(series_id: int, season_id: int, item_id: in
         season_id (int): Emby Season ID
         item_id (int): Emby Item ID
         api_key (str): Emby API Key
-        client (AsyncClient): HTTPX异步请求客户端
 
     Returns:
         ItemInfo: 包含Item信息的dataclass
         None: 如果没有找到下一集
     """
-    items: list[ItemInfo] = await get_series_info(series_id, season_id, api_key, client)
+    items: list[ItemInfo] = await get_series_info(series_id, season_id, api_key)
     for i in items:
         if i.item_id == item_id:
             index = i.tvshows_info.index_number
@@ -107,17 +107,18 @@ async def get_next_episode_item_info(series_id: int, season_id: int, item_id: in
         
 
 # used to get the file info from emby server
-async def get_file_info(item_id, api_key, media_source_id, client: AsyncClient, media_info_api=None) -> FileInfo | list[FileInfo]:
+async def get_file_info(item_id, api_key, media_source_id, media_info_api=None) -> FileInfo | list[FileInfo]:
     """
     从Emby服务器获取文件播放信息
     
     :param item_id: Emby Item ID
     :param MediaSourceId: Emby MediaSource ID
     :param apiKey: Emby API Key
-    :param client: HTTPX异步请求客户端
     :param media_info_api: 自定义PlaybackInfo URL，及参数
     :return: 包含文件信息的dataclass
     """
+    client = ClientManager.get_client()
+    
     if media_info_api is None:
         media_info_api = f"{EMBY_SERVER}/emby/Items/{item_id}/PlaybackInfo?MediaSourceId={media_source_id}&api_key={api_key}"
     logger.info(f"Requested Info URL: {media_info_api}")

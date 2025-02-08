@@ -29,8 +29,8 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
     if not media_source_id:
         raise fastapi.HTTPException(status_code=400, detail="MediaSourceId is required")
 
-    file_info: FileInfo = await get_file_info(item_id, api_key, media_source_id, client=requests_client)
-    item_info: ItemInfo = await get_item_info(item_id, api_key, client=requests_client)
+    file_info: FileInfo = await get_file_info(item_id, api_key, media_source_id)
+    item_info: ItemInfo = await get_item_info(item_id, api_key)
     # host_url example: https://emby.example.com:8096/
     host_url = str(request.base_url)
     request_info = RequestInfo(
@@ -54,7 +54,7 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
         return fastapi.responses.RedirectResponse(url=redirected_url, status_code=302)
     
     # 如果满足alist直链条件，提前通过异步缓存alist直链
-    raw_link_manager = RawLinkManager(file_info.path, request_info, requests_client)
+    raw_link_manager = RawLinkManager(file_info.path, request_info)
     await raw_link_manager.create_task()
     request_info.raw_link_manager = raw_link_manager
     
@@ -63,7 +63,6 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
         return await request_handler(
             expected_status_code=302,
             request_info=request_info,
-            client=requests_client
             )
 
     range_header = request.headers.get('Range', '')
@@ -87,7 +86,6 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
                 request_info=request_info,
                 resp_header=resp_headers,
                 background_tasks=background_tasks,
-                client=requests_client
                 )
         else:
             background_tasks.add_task(
@@ -95,7 +93,7 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
                 item_id,
                 request_info,
                 request.headers,
-                client=requests_client
+                requests_client
                 )
 
             logger.info("Started background task to write cache file.")
@@ -103,7 +101,6 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
             return await request_handler(
                 expected_status_code=302,
                 request_info=request_info,
-                client=requests_client
                 )
         
     # 解析Range头，获取请求的起始字节
@@ -158,7 +155,6 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
                 request_info=request_info, 
                 resp_header=resp_header, 
                 background_tasks=background_tasks, 
-                client=requests_client
                 )
         else:
             # 后台任务缓存文件
@@ -167,7 +163,6 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
                 item_id,
                 request_info,
                 request.headers,
-                client=requests_client
                 )
             logger.info("Started background task to write cache file.")
 
@@ -176,7 +171,6 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
                 expected_status_code=302,
                 request_info=request_info,
                 background_tasks=background_tasks,
-                client=requests_client
                 )
      
     # 应该走缓存的情况2：请求文件末尾
@@ -225,7 +219,6 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
                 expected_status_code=302, 
                 request_info=request_info,
                 background_tasks=background_tasks,
-                client=requests_client
                 )
     else:
         request_info.cache_status = CacheStatus.MISS
@@ -235,7 +228,6 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
                 expected_status_code=302, 
                 request_info=request_info, 
                 background_tasks=background_tasks, 
-                client=requests_client
                 )
         
         resp_header = {
@@ -253,5 +245,4 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
             request_info=request_info, 
             resp_header=resp_header, 
             background_tasks=background_tasks, 
-            client=requests_client
             )

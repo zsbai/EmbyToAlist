@@ -4,10 +4,11 @@ import asyncio
 import fastapi
 import httpx
 from loguru import logger
-from aiocache import cached, Cache
+from aiocache import Cache
 
 from ..api.alist import get_alist_raw_url
 from ..models import RequestInfo
+from .network import ClientManager
 
 # a wrapper function to get the time of the function
 def get_time(func):
@@ -84,12 +85,12 @@ class RawLinkManager():
     
     def __init__(self, 
                  path: str,
-                 request_info: RequestInfo,
-                 client: httpx.AsyncClient):
+                 request_info: RequestInfo
+                 ):
         self.path = path
         self.is_strm = request_info.file_info.is_strm
         self.ua = request_info.headers.get("user-agent")
-        self.client = client
+        self.client = ClientManager.get_client()
         self.raw_url = None
         self.task = None
         
@@ -115,8 +116,7 @@ class RawLinkManager():
         else:
             raw_url = await get_alist_raw_url(
                 self.path,
-                self.ua,
-                self.client
+                self.ua
                 )
         await self.cache.set(f"raw_url:{self.path}:{self.ua}", raw_url, ttl=600)
         return raw_url

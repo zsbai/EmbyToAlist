@@ -3,9 +3,10 @@ from fastapi import HTTPException
 from loguru import logger
 
 from ..config import ALIST_SERVER, ALIST_API_KEY
+from ..utils.network import ClientManager
 
 # return Alist Raw Url
-async def get_alist_raw_url(file_path: str, ua: str, client: AsyncClient) -> str:
+async def get_alist_raw_url(file_path: str, ua: str) -> str:
     """创建或获取Alist Raw Url缓存，缓存时间为5分钟
 
     Args:
@@ -16,7 +17,7 @@ async def get_alist_raw_url(file_path: str, ua: str, client: AsyncClient) -> str
     Returns:
         str: Alist Raw Url
     """
-    
+    client = ClientManager.get_client()
     alist_api_url = f"{ALIST_SERVER}/api/fs/get"
 
     body = {

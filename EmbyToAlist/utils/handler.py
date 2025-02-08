@@ -24,7 +24,6 @@ async def request_handler(expected_status_code: int,
                           request_info: RequestInfo=None,
                           resp_header: dict=None,
                           background_tasks: fastapi.BackgroundTasks=None,
-                          client: httpx.AsyncClient=None
                           ) -> fastapi.Response:
     """决定反代还是重定向，创建alist缓存
     
@@ -38,7 +37,7 @@ async def request_handler(expected_status_code: int,
     """
     
     if request_info.cache_status != CacheStatus.UNKNOWN and background_tasks is not None and CACHE_NEXT_EPISODE is True:
-        background_tasks.add_task(cache_next_episode, request_info=request_info, api_key=request_info.api_key, client=client)
+        background_tasks.add_task(cache_next_episode, request_info=request_info, api_key=request_info.api_key)
         logger.info("Started background task to cache next episode.")
 
     if expected_status_code == 416:
@@ -73,7 +72,6 @@ async def request_handler(expected_status_code: int,
                 raw_link_manager=request_info.raw_link_manager, 
                 request_header=request_header,
                 response_headers=resp_header,
-                client=client
                 )
         elif cache_status in {CacheStatus.HIT, CacheStatus.HIT_TAIL}:
             # Case 2: Requested range is entirely within the cache
@@ -93,7 +91,6 @@ async def request_handler(expected_status_code: int,
                 raw_link_manager=request_info.raw_link_manager, 
                 request_header=request_header,
                 response_headers=resp_header,
-                client=client
                 )
         
     if expected_status_code == 200:
@@ -103,7 +100,6 @@ async def request_handler(expected_status_code: int,
             raw_link_manager=request_info.raw_link_manager,
             request_header=request_header,
             response_headers=resp_header,
-            client=client,
             status_code=200
             )
     
