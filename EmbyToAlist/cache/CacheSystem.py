@@ -20,6 +20,7 @@ class CacheWriter(AbstractAsyncContextManager):
         self._closed = False
     
     async def __aenter__(self):
+        await self.precheck()
         # 启动后台写入任务
         self._writer_task = asyncio.create_task(self._writer())
         return self
@@ -28,6 +29,30 @@ class CacheWriter(AbstractAsyncContextManager):
         # 关闭写入任务
         await self.close()
     
+    async def precheck(self):
+        """
+        预检查缓存文件是否存在，如果存在则跳过写入
+        """
+        async with self.lock:
+            if self.file_path.exists():
+                logger.warning(f"Cache file {self.file_path} already exists, Skipping.")
+                # 阻止后续的写入
+                self._closed = True
+            
+            # 检查是否有重叠的缓存文件
+            for cache_file in self.file_path.parent.iterdir():
+                if cache_file.is_file():
+                    if cache_file.name.startswith("cache_file"):
+                        new_start, new_end = map(int, self.file_path.stem.split("_")[2:4])
+                        old_start, old_end = map(int, cache_file.stem.split("_")[2:4])
+                        if new_start >= old_start and new_end <= old_end:
+                            logger.warning(f"Overlapping cache file found: {cache_file}")
+                            self._closed = True
+                            break
+                        if new_start <= old_start and new_end >= old_end:
+                            logger.warning(f"Existing Cache Range within new range. Deleting old cache.")
+                            cache_file.unlink()
+                             
     async def _writer(self):
         """
         后台任务：持续从队列中读取数据块，顺序写入文件。
