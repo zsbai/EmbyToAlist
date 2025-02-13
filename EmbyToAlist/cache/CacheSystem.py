@@ -91,6 +91,7 @@ class CacheSystem():
     def __init__(self, root_dir: str):
         self.root_dir: Path = Path(root_dir)
         self.cache_locks = WeakValueDictionary()
+        self._initialize()
         
     def _write_version_file(self):
         """Write the version file to the cache directory.

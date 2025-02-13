@@ -74,16 +74,32 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
         logger.warning("Requested Range Not Satisfiable")
         raise fastapi.HTTPException(status_code=416, detail="Requested Range Not Satisfiable", headers={"Content-Range": f"bytes */{file_info.size}"})
     
+    range_info = RangeInfo(
+        request_range=(start_byte, end_byte),
+        cache_range=None,
+        response_range=None,
+    )
+    
+    request_info = RequestInfo(
+        file_info=file_info,
+        item_info=item_info,
+        raw_link_manager=raw_link_manager,
+        cache_range_status=None,
+        range_info=range_info,
+    )
+    
     cache_system = CacheManager.get_cache_system()
     cache_exist = cache_system.get_cache_status(request_info)
     
     # 应该走缓存的情况1：请求文件开头
     cache_file_size = file_info.cache_file_size
     if start_byte < cache_file_size:
+        request_info.range_info.cache_range = (0, cache_file_size - 1)
+        
         if end_byte is None or end_byte < cache_file_size:
-            cache_range_status = CacheRangeStatus.PARTIALLY_CACHED
+            request_info.cache_range_status = CacheRangeStatus.PARTIALLY_CACHED
         else:
-            cache_range_status = CacheRangeStatus.FULLY_CACHED
+            request_info.cache_range_status = CacheRangeStatus.FULLY_CACHED
             if cache_exist:
                 resp_header = response_headers_template.copy()
                 resp_header['Content-Type'] = get_content_type(file_info.name)
@@ -96,7 +112,8 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
             
     # 应该走缓存的情况2：请求文件末尾
     elif file_info.size - start_byte < 2*1024*1024:
-        cache_range_status = CacheRangeStatus.FULLY_CACHED_TAIL
+        request_info.cache_range_status = CacheRangeStatus.FULLY_CACHED_TAIL
+        request_info.range_info.cache_range = (start_byte, file_info.size - 1)
         if cache_exist:
                 resp_header = response_headers_template.copy()
                 resp_header['Content-Type'] = get_content_type(file_info.name)
@@ -108,37 +125,14 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
                 )
         
     else:
-        cache_range_status = CacheRangeStatus.NOT_CACHED
+        request_info.cache_range_status = CacheRangeStatus.NOT_CACHED
         return await temporary_redirect(
             raw_link_manager=raw_link_manager,
         )
-        
-    if cache_range_status in {CacheRangeStatus.PARTIALLY_CACHED, CacheRangeStatus.FULLY_CACHED}:
-        cache_start = 0
-        cache_end = cache_file_size -1
-    elif cache_range_status == CacheRangeStatus.FULLY_CACHED_TAIL:
-        cache_start = start_byte
-        cache_end = file_info.size - 1
-    else:
-        logger.error("Unexpected Cache Range Status")
-        raise fastapi.HTTPException(status_code=500, detail="Unexpected Cache Range Status")
 
     response_start = start_byte
     response_end = file_info.size - 1 if end_byte is None else end_byte
-    
-    range_info = RangeInfo(
-        request_range=(start_byte, end_byte),
-        cache_range=(cache_start, cache_end),
-        response_range=(response_start, response_end),
-    )
-    
-    request_info = RequestInfo(
-        file_info=file_info,
-        item_info=item_info,
-        raw_link_manager=raw_link_manager,
-        cache_range_status=cache_range_status,
-        range_info=range_info,
-    )
+    request_info.range_info.response_range = (response_start, response_end)
     
     source_request_headers = {
         'User-Agent': request.headers.get('User-Agent'),
