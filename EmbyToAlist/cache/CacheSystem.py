@@ -11,8 +11,8 @@ from ..models import FileInfo, RequestInfo, CacheRangeStatus
 from typing import AsyncGenerator, Optional
 
 class CacheWriter(AbstractAsyncContextManager):
-    def __init__(self, file_path: str, lock, cache_key: str):
-        self.file_path = file_path
+    def __init__(self, file_path: Path, lock, cache_key: str):
+        self.file_path: Path = file_path
         self.queue = asyncio.Queue()
         self.lock = lock
         self.cache_key = cache_key
@@ -28,6 +28,7 @@ class CacheWriter(AbstractAsyncContextManager):
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         # 关闭写入任务
         await self.close()
+        await self.endcheck()
     
     async def precheck(self):
         """
@@ -95,6 +96,19 @@ class CacheWriter(AbstractAsyncContextManager):
             logger.warning(f"Cache writer for {self.file_path} is closed, skipping write.")
             return
         await self.queue.put(chunk)
+    
+    async def endcheck(self):
+        """
+        修正缓存文件大小
+        """
+        start, end = map(int, self.file_path.stem.split("_")[2:4])
+        async with self.lock:
+            # 检查文件大小
+            file_size = self.file_path.stat().st_size
+            if file_size != end - start + 1:
+                logger.debug(f"Cache file {self.file_path} size mismatch, expected: {end - start + 1}, actual: {file_size}")
+                # 修正文件大小
+                self.file_path.rename(self.file_path.with_name(f"cache_file_{start}_{start+file_size-1}"))
     
     async def close(self):
         """
@@ -178,7 +192,7 @@ class CacheSystem():
         
         cache_file_name = f'cache_file_{start_point}_{end_point}'
         cache_file_dir = self.root_dir / subdirname / dirname
-        cache_file_path = cache_file_dir / cache_file_name
+        cache_file_path: Path = cache_file_dir / cache_file_name
         
         cache_file_dir.mkdir(parents=True, exist_ok=True)
         
@@ -186,7 +200,7 @@ class CacheSystem():
         
         return writer
     
-    def verify_cache_file(file_info: FileInfo, cache_file_range: tuple[int, int]) -> bool:
+    def verify_cache_file(self, file_info: FileInfo, start: int, end: int) -> bool:
         """
         验证缓存文件是否符合 Emby 文件大小，筛选出错误缓存文件
         
@@ -197,7 +211,6 @@ class CacheSystem():
         
         :return: 缓存文件是否符合视频文件大小
         """
-        start, end = cache_file_range
         # 开头缓存文件
         if start == 0 and end == file_info.cache_file_size - 1:
             return True
@@ -211,6 +224,7 @@ class CacheSystem():
         """检查缓存状态
         """
         file_info = request_info.file_info
+        range_info = request_info.range_info
         
         subdirname, dirname = self._get_hash_subdirectory_from_path(file_info)
         cache_dir = self.root_dir / subdirname / dirname
@@ -222,8 +236,8 @@ class CacheSystem():
             if cache_file.is_file():
                 if cache_file.name.startswith("cache_file"):
                     start, end = map(int, cache_file.stem.split("_")[2:4])
-                    if self.verify_cache_file(file_info, (start, end)):
-                        if start <= request_info.start_byte <= end:
+                    if self.verify_cache_file(file_info, start, end):
+                        if start <= range_info.request_range[0] <= end:
                             return True
                     else:
                         logger.warning(f"Invalid cache file: {cache_file}")
