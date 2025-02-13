@@ -172,4 +172,4 @@ class ClientManager():
     @classmethod
     async def close_client(cls):
         if cls._client is not None:
-            cls._client.aclose()
+            await cls._client.aclose()

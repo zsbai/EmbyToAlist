@@ -19,12 +19,12 @@ class CacheWriter(AbstractAsyncContextManager):
         self._writer_task = None
         self._closed = False
     
-    def __enter__(self):
+    async def __aenter__(self):
         # 启动后台写入任务
         self._writer_task = asyncio.create_task(self._writer())
         return self
     
-    async def __exit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
         # 关闭写入任务
         await self.close()
     
@@ -110,7 +110,7 @@ class CacheSystem():
     
     def _get_cache_lock(self, subdirname: Path, dirname: Path):
         # 为每个子目录创建一个锁, 防止不同文件名称的缓存同时写入，导致重复范围的文件
-        key = subdirname / dirname 
+        key = f"{subdirname}/{dirname}" 
         if key not in self.cache_locks:
             # 防止被weakref立即回收
             lock = asyncio.Lock()
