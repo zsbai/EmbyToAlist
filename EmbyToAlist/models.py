@@ -6,17 +6,21 @@ from typing import Optional, TYPE_CHECKING
 if TYPE_CHECKING:
     from .utils.helpers import RawLinkManager
 
-class CacheStatus(StrEnum):
-    """ 本地缓存状态 """
+class CacheRangeStatus(StrEnum):
+    """ 请求的范围与本地缓存的匹配状态 """
+        
+    FULLY_CACHED = "Fully_Cached"
+    """ 请求范围 完全 在缓存内部 """
     
-    HIT = "Hit"
-    """ 缓存完全命中 """
-    MISS = "Miss"
-    """ 缓存未命中 """
-    PARTIAL = "Partial"
-    """ 缓存部分命中，响应内容拓展至缓存外 """
-    HIT_TAIL = "Hit_Tail"
-    """ 缓存完全命中，且请求在文件末尾2MB内 """
+    NOT_CACHED = "Not_Cached"
+    """ 请求范围 完全 不在缓存内部 """
+    
+    PARTIALLY_CACHED = "Partially_Cached"
+    """ 请求范围 部分 在缓存内部，部分超出 """
+    
+    FULLY_CACHED_TAIL = "Fully_Cached_Tail"
+    """ 请求范围 完全 在缓存内部，且位于文件末尾 2MB 内 """
+    
     UNKNOWN = "Unknown"
     """ 未知状态 """
 
@@ -53,13 +57,31 @@ class FileInfo:
     is_strm: bool = False
     
 @dataclass
+class RangeInfo:
+    """ 范围信息 """
+    
+    request_range: tuple[int, int]
+    """ 请求的范围 """
+    
+    cache_range: Optional[tuple[int, int]] = None
+    """ 缓存的范围 """
+    
+    response_range: Optional[tuple[int, int]] = None
+    """ 响应的范围 """
+    
+    # file_source_request_range: Optional[tuple[int, int]] = None
+    # """ 文件源的请求范围(根据缓存状态变化) """
+    
+@dataclass
 class RequestInfo:
     file_info: FileInfo
     item_info: ItemInfo
-    host_url: str
-    start_byte: Optional[int] = None
-    end_byte: Optional[int] = None
-    cache_status: CacheStatus = CacheStatus.UNKNOWN
+    range_info: RangeInfo
+    cache_range_status: CacheRangeStatus = CacheRangeStatus.UNKNOWN
     api_key: Optional[str] = None
     raw_link_manager: Optional['RawLinkManager'] = None
-    headers: Optional[dict] = None
+
+response_headers_template = {
+    'Accept-Ranges': 'bytes',
+    'Cache-Control': 'private, no-transform, no-cache'
+}

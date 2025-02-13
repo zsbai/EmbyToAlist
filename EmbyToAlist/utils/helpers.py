@@ -2,12 +2,10 @@ import re
 import asyncio
 
 import fastapi
-import httpx
 from loguru import logger
 from aiocache import Cache
 
 from ..api.alist import get_alist_raw_url
-from ..models import RequestInfo
 from .network import ClientManager
 
 # a wrapper function to get the time of the function
@@ -85,11 +83,12 @@ class RawLinkManager():
     
     def __init__(self, 
                  path: str,
-                 request_info: RequestInfo
+                 is_strm: bool,
+                 ua: str
                  ):
         self.path = path
-        self.is_strm = request_info.file_info.is_strm
-        self.ua = request_info.headers.get("user-agent")
+        self.is_strm = is_strm
+        self.ua = ua
         self.client = ClientManager.get_client()
         self.raw_url = None
         self.task = None

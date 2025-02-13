@@ -1,7 +1,7 @@
 [project]
 name = "embytoalist"
-version = "0.1.0"
-description = "Add your description here"
+version = "0.2.0"
+description = "A simple API used for redirect Emby streams to original File raw url."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
