@@ -177,9 +177,10 @@ class CacheSystem():
         start_point, end_point = request_info.range_info.cache_range
         
         cache_file_name = f'cache_file_{start_point}_{end_point}'
-        cache_file_path = self.root_dir / subdirname / dirname / cache_file_name
+        cache_file_dir = self.root_dir / subdirname / dirname
+        cache_file_path = cache_file_dir / cache_file_name
         
-        cache_file_path.mkdir(parents=True, exist_ok=True)
+        cache_file_dir.mkdir(parents=True, exist_ok=True)
         
         writer = CacheWriter(cache_file_path, self._get_cache_lock(subdirname, dirname), self._get_hash_subdirectory_from_path(file_info)[1])
         
