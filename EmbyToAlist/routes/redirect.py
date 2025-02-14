@@ -148,7 +148,7 @@ async def redirect(item_id, filename, request: fastapi.Request, background_tasks
         return await reverse_proxy(
             cache=cache_system.read_cache_file(request_info),
             request_header=source_request_headers,
-            response_headers=response_headers_template,
+            response_headers=response_headers,
             request_info=request_info,
         )
         

@@ -100,7 +100,7 @@ async def reverse_proxy(cache: AsyncGenerator[bytes, None],
         finally:
             # 检查写入的数据是否与缓存大小相等
             if writer is not None and written != cache_size:
-                logger.error(f"Cache Write Error: Written {written} bytes, expected {cache_size} bytes")
+                logger.debug(f"Cache Write Error: Written {written} bytes, expected {cache_size} bytes")
             logger.debug(f"Total Bytes Downloaded: {total_bytes_downloaded}")
             if writer is not None:
                 logger.debug(f"Total Bytes Written: {written}")
