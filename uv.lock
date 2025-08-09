@@ -85,6 +85,15 @@ wheels = [
 ]
 
 [[package]]
+name = "diskcache"
+version = "5.6.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/3f/21/1c1ffc1a039ddcc459db43cc108658f32c57d271d7289a2794e401d0fdb6/diskcache-5.6.3.tar.gz", hash = "sha256:2c3a3fa2743d8535d832ec61c2054a1641f41775aa7c556758a109941e33e4fc", size = 67916 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3f/27/4570e78fc0bf5ea0ca45eb1de3818a23787af9b390c0b0a0033a1b8236f9/diskcache-5.6.3-py3-none-any.whl", hash = "sha256:5e31b2d5fbad117cc363ebaf6b689474db18a1f6438bc82358b024abd4c2ca19", size = 45550 },
+]
+
+[[package]]
 name = "embytoalist"
 version = "0.2.0"
 source = { virtual = "." }
@@ -96,6 +105,7 @@ dependencies = [
     { name = "anyio" },
     { name = "certifi" },
     { name = "click" },
+    { name = "diskcache" },
     { name = "environs" },
     { name = "fastapi" },
     { name = "h11" },
@@ -125,6 +135,7 @@ requires-dist = [
     { name = "anyio", specifier = "==4.6.0" },
     { name = "certifi", specifier = "==2024.8.30" },
     { name = "click", specifier = "==8.1.7" },
+    { name = "diskcache", specifier = ">=5.6.3" },
     { name = "environs", specifier = "==14.0.0" },
     { name = "fastapi", specifier = "==0.115.0" },
     { name = "h11", specifier = "==0.14.0" },

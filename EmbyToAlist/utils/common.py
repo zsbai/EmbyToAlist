@@ -1,3 +1,6 @@
+import asyncio
+from functools import wraps, partial
+
 import httpx
 from loguru import logger
 
@@ -13,6 +16,19 @@ def get_time(func):
         logger.info(f"Function {func.__name__} takes: {end - start} seconds")
         return result
     return wrapper
+
+
+def async_wrap(func):
+    """Transform a synchronous function to an asynchronous one."""
+
+    @wraps(func)
+    async def run(*args, loop=None, executor=None, **kwargs):
+        if loop is None:
+            loop = asyncio.get_event_loop()
+        pfunc = partial(func, *args, **kwargs)
+        return await loop.run_in_executor(executor, pfunc)
+
+    return run
 
 class ClientManager():
     _client: Optional[httpx.AsyncClient] = None

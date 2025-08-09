@@ -115,6 +115,7 @@ class ChunksWriter():
         
         # 针对请求末尾的情况
         if self.cache_range_status == CacheRangeStatus.FULLY_CACHED_TAIL:
+            logger.debug(f"smallest_request_start_point: {self.smallest_request_start_point}, start: {start}, end: {end}")
             if start < self.smallest_request_start_point:
                 self.smallest_request_start_point = start
             

@@ -249,7 +249,7 @@ class FileStorage:
         start, end = range_info.cache_range
         
         # deprecated
-        start = writer.smallest_request_start_point if writer.cache_range_status == CacheRangeStatus.FULLY_CACHED_TAIL else start
+        # start = writer.smallest_request_start_point if writer.cache_range_status == CacheRangeStatus.FULLY_CACHED_TAIL else start
         
         fname = f"cache_file_{start}_{end}"
         temp_path = cache_dir / f"{fname}.tmp"
