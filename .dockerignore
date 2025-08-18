@@ -1,6 +1,6 @@
 **/.git
 **/.gitignore
-**/__pycache_
+**/__pycache__
 **/.dockerignore
 **/docker-compose*
 **/compose*
@@ -11,3 +11,12 @@
 *.log
 **/cache
 README.md
+.env
+.env.example
+test/
+nginx.conf
+GEMINI.md
+uv.lock
+pyproject.toml
+*.pyc
+*.pyo

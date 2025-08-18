@@ -2,7 +2,7 @@ services:
   embytoalist:
     image: ghcr.io/zsbai/embytoalist:latest
     env_file:
-      - ".env"
+      - .env
     volumes:
       - /path/to/cache_dir:/path/to/cache_dir
     # host和port二选一

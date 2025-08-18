@@ -1,12 +1,8 @@
-# EmbyToAlist
+# EmbyToAlist-V2
 
 通过 Nginx 反向代理 + Python FastAPI + Alist 实现的 Emby 播放302重定向项目, 支持STRM。
 
 灵感来自于 [MisakaFxxk/Go_stream](https://github.com/MisakaFxxk/Go_stream) ， [bpking1/embyExternalUrl](https://github.com/bpking1/embyExternalUrl)和[Nolovenodie](https://github.com/Nolovenodie)/[emby-direct](https://github.com/Nolovenodie/emby-direct)。
-
-* 更新：已通过 FastAPI 重构，相比于 Flask，响应速度有较大提升。
-
-* 更新： 更新至V2版本，增加对STRM的支持，配置项更改为环境变量。从V1升级到V2需要清空 Cache 文件夹。
 
 # 用途
 
@@ -41,6 +37,8 @@ $ python3 -m EmbyToAlist
 ```
 
 ## 2. 通过docker compose部署
+
+项目中已经有了两个docker compose的配置文件，其中一个将同时配置 Nginx，根据需求选择：
 ```
 # 获取docker-compose.yml文件 和 配置文件
 $ wget https://raw.githubusercontent.com/zsbai/EmbyToAlist/refs/heads/main/docker-compose.yml -O docker-compose.yml && wget https://raw.githubusercontent.com/zsbai/EmbyToAlist/refs/heads/main/.env.example -O .env
@@ -56,23 +54,9 @@ $ docker compose down
 $ docker compose logs
 ```
 
-示例 docker-compose.yml 文件：
-```
-services:
-  embytoalist:
-    image: ghcr.io/zsbai/embytoalist:latest
-    volumes:
-      - ./config.py:/app/config.py
-      - /path/to/cache_dir:/path/to/cache_dir
-    # host和port二选一，设置为host可以直接通过 127.0.0.1 访问宿主机上的alist和emby服务
-    # 设置为port需要使用docker网关访问宿主机
-    network_mode: host
-    # ports:
-    #   - 127.0.0.1:60001:60001
-    restart: unless-stopped
-```
+## Nginx 配置
 
-启动服务器后，需要配置 Nginx，将播放路径反向代理到本地`60001`端口。
+如果并没有使用自带 Nginx 的 docker compose 部署，则需要在启动服务器后，同时配置 Nginx，将播放路径反向代理到本地`60001`端口。
 
 **为确保请求头中的`Range`不丢失，确保中间的任何代理服务都不会缓存视频文件，如Cloudflare等。启用缓存视频文件会导致`Range`请求头丢失，从而使本地的缓存功能失效。末尾有 Cloudflare Cache Rule 示例**
 
@@ -153,7 +137,9 @@ services:
 * `ALIST_SERVER`：字符串，Alist服务器地址（建议内网地址）
 * `ALIST_API_KEY`：字符串，Alist 密钥 （必须）
 
-* `IGNORE_PATH`：列表，本地文件路径开头，该路径下的媒体文件将不会通过 AList 重定向到文件直链。示例：["/local/media"]
+* `ENABLE_UA_PASSTHROUGH`：将播放器 UA 传递给 Alist，用于适配 115 等需要验证 UA 的云盘
+
+* `IGNORE_PATH`：列表，本地文件路径开头，该路径下的媒体文件将不会通过 AList 重定向到文件直链。示例："/mnt/localpath/, /mnt/localpath2/"
 
 * `MOUNT_PATH_PREFIX_REMOVE`：字符串，挂载路径需要移除的路径前缀，示例："/mnt"。不需要请留空
 * `MOUNT_PATH_PREFIX_ADD`：字符串，移除后需要额外添加的路径前缀，示例：“/media”。不需要请留空
@@ -162,13 +148,16 @@ services:
 
 最后转换完成的路径应该是Alist中的路径。
 
-* `CACHE_ENABLE`：布尔值，是否缓存媒体文件的前15秒进行加速（通过码率计算）。
+* `CACHE_ENABLE`：布尔值，是否缓存媒体文件的开头一小段进行起播加速（通过码率计算）。
 * `CACHE_NEXT_EPISODE`：布尔值，在播放剧集的时候自动缓存下一集
 * `CACHE_PATH`：字符串，缓存存放的路径。
+
+* `LOG_LEVEL`：日志等级
+
 实验项目：
 * `FORCE_CLIENT_RECONNECT`：使用缓存的时候，响应完缓存内容后强制打断客户端连接，迫使客户端重新发起请求后响应302，以在开启缓存后同时使用302减少服务端流量消耗（注：开启后每次播放反响代理必然会报错，忽视即可）。
 
-* `LOG_LEVEL`：字符串，日志等级。示例：“debug“。
+* `MEMORY_CACHE_ONLY`：仅在内存中缓存，不写入磁盘
 
 # 项目实现方法 & 逻辑解释
 
