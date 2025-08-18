@@ -101,9 +101,9 @@ class CacheSystem():
                 await self.task_manager.create_task(object, disk_writer_key, object(), sub_key, ttl=60)
                 asyncio.create_task(
                     self.storage.write_to_disk(
+                        writer=writer,
                         file_info=tail_request_info.file_info,
-                        range_info=tail_request_info.range_info,
-                        writer=writer
+                        range_info=tail_request_info.range_info
                     )
                 )
             
@@ -169,9 +169,9 @@ class CacheSystem():
                 await self.task_manager.create_task(object, disk_writer_key, object(), sub_key, ttl=120)
                 asyncio.create_task(
                     self.storage.write_to_disk(
+                        writer=writer,
                         file_info=request_info.file_info,
-                        range_info=request_info.range_info,
-                        writer=writer
+                        range_info=request_info.range_info
                     )
                 )
                 

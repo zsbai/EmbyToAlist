@@ -5,7 +5,7 @@ import httpx
 from loguru import logger
 
 from ..config import FORCE_CLIENT_RECONNECT
-from ..models import RequestInfo, CacheRangeStatus
+from ..models import RequestInfo, CacheRangeStatus, FileHeaders
 from ..cache.manager import AppContext
 from ..cache.system import CacheSystem
 from typing import AsyncGenerator, TYPE_CHECKING
@@ -29,6 +29,20 @@ async def reverse_proxy(
     :return: fastapi.responses.StreamingResponse
     """
     cache_system: CacheSystem = AppContext.get_cache_system()
+    
+    # 尝试从缓存中获取文件头信息并添加到响应头中
+    try:
+        file_headers = await cache_system.storage.get_file_headers(request_info.file_info)
+        if file_headers:
+            if file_headers.etag:
+                response_headers['ETag'] = file_headers.etag
+            if file_headers.last_modified:
+                response_headers['Last-Modified'] = file_headers.last_modified
+            if file_headers.content_disposition and 'Content-Disposition' not in response_headers:
+                response_headers['Content-Disposition'] = file_headers.content_disposition
+            logger.debug(f"Added cached headers to response: ETag={file_headers.etag}, Last-Modified={file_headers.last_modified}")
+    except Exception as e:
+        logger.warning(f"Failed to retrieve cached headers: {e}")
     
     async def merged_stream() -> AsyncGenerator[bytes, None]:
         

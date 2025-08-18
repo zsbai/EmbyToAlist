@@ -167,7 +167,7 @@ async def redirect(item_id, filename, request: fastapi.Request):
     response_headers['Content-Type'] = get_content_type(file_info.container)
     response_headers['Content-Range'] = f"bytes {response_start}-{response_end}/{file_info.size}"
     response_headers['Content-Length'] = f'{response_end - response_start + 1}'
-    response_headers['Content-Disposition'] = f'inline; filename="{file_info.name}.{file_info.container}"'
+    # response_headers['Content-Disposition'] = f'inline; filename="{file_info.name}.{file_info.container}"'
     
     # consider head request
     if request.method == 'HEAD':

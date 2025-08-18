@@ -59,6 +59,19 @@ class FileInfo:
     cache_file_size: int
     name: str
     is_strm: bool = False
+
+@dataclass
+class FileHeaders:
+    """ 文件头信息，用于存储从后端获取的E-Tag和Last-Modified等头信息 """
+    
+    etag: Optional[str] = None
+    """ E-Tag头信息 """
+    
+    last_modified: Optional[str] = None
+    """ Last-Modified头信息 """
+    
+    content_disposition: Optional[str] = None
+    """ Content-Disposition头信息 """
     
 @dataclass
 class RangeInfo:

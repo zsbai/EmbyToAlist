@@ -7,7 +7,7 @@ from loguru import logger
 
 from ..config import CHUNK_SIZE_OF_CHUNKSWITER
 from ..utils.common import ClientManager
-from ..models import RequestInfo, CacheRangeStatus
+from ..models import RequestInfo, CacheRangeStatus, FileHeaders
 from typing import AsyncGenerator, Optional
 
 
@@ -40,6 +40,9 @@ class ChunksWriter():
         # 第二次请求范围为 60000-80000
         # 则我们需要缓存 60000-80000
         self.smallest_request_start_point: int = float("inf")
+        
+        # 存储从后端响应中提取的文件头信息
+        self.file_headers: Optional[FileHeaders] = None
 
     def __del__(self):
         logger.debug(f"ChunksWriter: {self.cache_range_start}-{self.cache_range_end} has been deleted")
@@ -67,6 +70,25 @@ class ChunksWriter():
         async with self.client.stream("GET", raw_url, headers=self.request_header) as response:
             if response.status_code != 206:
                 raise ValueError(f"Expected 206 response, got {response.status_code}")
+            
+            # logger.debug(f"File source response headers: {response.headers}")
+            # 提取文件头信息
+            etag = response.headers.get('ETag')
+            last_modified = response.headers.get('Last-Modified')
+            content_disposition = response.headers.get('Content-Disposition')
+            
+            # 只有当至少有一个头信息存在时才创建FileHeaders对象
+            if etag or last_modified or content_disposition:
+                self.file_headers = FileHeaders(
+                    etag=etag,
+                    last_modified=last_modified,
+                    content_disposition=content_disposition
+                )
+                logger.debug(f"Extracted headers: ETag={self.file_headers.etag}, Last-Modified={self.file_headers.last_modified}")
+            else:
+                self.file_headers = None
+                logger.debug("No headers found in response")
+            
             logger.debug("======== Cache write started =======")
             
             async for chunk in response.aiter_bytes(chunk_size):

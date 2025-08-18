@@ -1,4 +1,5 @@
 test_assets/*
+test/*
 *.test
 cache/*
 

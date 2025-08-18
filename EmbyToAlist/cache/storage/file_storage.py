@@ -7,7 +7,7 @@ import aiofiles
 import aiofiles.os
 from loguru import logger
 
-from ...models import RequestInfo, CacheRangeStatus, FileInfo, RangeInfo
+from ...models import RequestInfo, CacheRangeStatus, FileInfo, RangeInfo, FileHeaders
 from ...config import MEMORY_CACHE_ONLY
 from ..writer import ChunksWriter
 from ...utils.database import TinyDBHandler
@@ -62,20 +62,6 @@ class FileStorage:
 
         # 初始化缓存文件表
         self.db.set_table('cache_files')
-        
-    # @deprecate         
-    # def _get_hash_subdirectory_from_path(self, file_info: FileInfo) -> tuple[str, str]:
-    #     """
-    #     计算给定文件路径的MD5哈希，并返回哈希值的前两位作为子目录名称 (Cache Key)。
-    #     缓存键为文件名称+文件大小+文件类型
-
-    #     :param file_info: 文件信息
-        
-    #     :return: 哈希值的前两个字符，作为子目录名称
-    #     """
-    #     cache_key = f"{file_info.name}:{file_info.size}:{file_info.container}"
-    #     hash_digest = hashlib.md5(cache_key.encode('utf-8')).hexdigest()
-    #     return hash_digest[:2], hash_digest # 返回子目录名称和哈希值
     
     def _hash_dir(self, file_info: FileInfo) -> Path:
         """
@@ -245,6 +231,17 @@ class FileStorage:
                 break
             await asyncio.sleep(20)
         
+        # 确保writer已经完成，然后获取头信息
+        if not writer.completed:
+            logger.warning("Writer not completed after waiting, proceeding anyway")
+        
+        # 从writer中获取头信息
+        file_headers = writer.file_headers
+        if file_headers:
+            logger.debug(f"Retrieved headers from writer: ETag={file_headers.etag}, Last-Modified={file_headers.last_modified}")
+        else:
+            logger.debug("No headers available from writer")
+        
         cache_dir = self._hash_dir(file_info)
         start, end = range_info.cache_range
         
@@ -268,11 +265,15 @@ class FileStorage:
             final_path = cache_dir / fname
             await aiofiles.os.rename(temp_path, final_path)
             logger.info(f"Cache file written: {final_path}")
-            await self._update_cache_stats(final_path)
+            await self._update_cache_stats(final_path, file_headers)
         
-    async def _update_cache_stats(self, file_path: Path):
+    async def _update_cache_stats(self, file_path: Path, file_headers: Optional[FileHeaders] = None):
         """
         更新缓存统计信息
+        
+        Args:
+            file_path (Path): 缓存文件路径
+            file_headers (Optional[FileHeaders]): 文件头信息
         """
         file_size = file_path.stat().st_size
         cache_dir = file_path.parent
@@ -281,19 +282,50 @@ class FileStorage:
         # 检查缓存目录是否已存在
         is_new = not self.db.search(lambda q: q.path == str(cache_dir))
         
+        # 准备缓存记录数据
+        cache_record = {
+            'path': str(cache_dir),
+            'size': file_size,
+            'created_at': file_path.stat().st_ctime,
+            'last_read_time': file_path.stat().st_atime,
+            'score': 100  # 初始分数
+        }
+        
+        # 始终设置头信息字段，确保数据库结构一致
+        if file_headers:
+            cache_record['etag'] = file_headers.etag
+            cache_record['last_modified'] = file_headers.last_modified
+            cache_record['content_disposition'] = file_headers.content_disposition
+        else:
+            # 如果没有头信息，显式设置为None
+            cache_record['etag'] = None
+            cache_record['last_modified'] = None
+            cache_record['content_disposition'] = None
+        
         if is_new:
             # 如果不存在，则插入新记录
-            self.db.insert_one({
-                'path': str(cache_dir),
-                'size': file_size,
-                'created_at': file_path.stat().st_ctime,
-                'last_read_time': file_path.stat().st_atime,
-                'score': 100  # 初始分数
-            })
+            self.db.insert_one(cache_record)
         else:
-            # 如果存在，则只更新大小
+            # 如果存在，则更新大小和头信息
+            def update_fields(doc):
+                fields = {'size': doc.get('size', 0) + file_size}
+                
+                # 始终更新头信息字段，确保与当前后端状态一致
+                # 如果当前后端有头信息，则更新；如果没有，则清除旧的头信息
+                if file_headers:
+                    fields['etag'] = file_headers.etag
+                    fields['last_modified'] = file_headers.last_modified
+                    fields['content_disposition'] = file_headers.content_disposition
+                else:
+                    # 如果当前后端没有头信息，清除数据库中的旧头信息
+                    fields['etag'] = None
+                    fields['last_modified'] = None
+                    fields['content_disposition'] = None
+                
+                return fields
+            
             self.db.update(
-                fields=lambda doc: {'size': doc.get('size', 0) + file_size},
+                fields=update_fields,
                 condition=lambda q: q.path == str(cache_dir)
             )
 
@@ -301,7 +333,7 @@ class FileStorage:
         async with self.db_lock:
             self.db.set_table('system_info')
             
-            def update_fields(doc):
+            def update_global_fields(doc):
                 fields = {'cache_size': doc.get('cache_size', 0) + file_size}
                 if is_new:
                     fields['cache_count'] = doc.get('cache_count', 0) + 1
@@ -309,7 +341,7 @@ class FileStorage:
 
             self.db.update(
                 condition=lambda q: q.version == self.version,
-                fields=update_fields
+                fields=update_global_fields
             )
 
     async def read_from_disk(
@@ -348,3 +380,39 @@ class FileStorage:
             bool: 是否已缓存
         """
         return await self.get_cache_file_path(file_info, range_info) is not None
+
+    async def get_file_headers(
+        self,
+        file_info: FileInfo
+    ) -> Optional[FileHeaders]:
+        """
+        获取缓存文件的头信息
+        
+        Args:
+            file_info (FileInfo): 文件信息
+        Returns:
+            Optional[FileHeaders]: 文件头信息，如果没有找到则返回 None
+        """
+        cache_dir = self._hash_dir(file_info)
+        
+        self.db.set_table('cache_files')
+        records = self.db.search(lambda q: q.path == str(cache_dir))
+        
+        if not records:
+            logger.debug(f"No cache record found for {file_info.path}")
+            return None
+        
+        record = records[0]  # 取第一个匹配的记录
+        
+        # 从数据库记录中提取头信息
+        file_headers = FileHeaders(
+            etag=record.get('etag'),
+            last_modified=record.get('last_modified'),
+            content_disposition=record.get('content_disposition')
+        )
+        
+        # 如果所有字段都为空，返回None
+        if not any([file_headers.etag, file_headers.last_modified, file_headers.content_disposition]):
+            return None
+        
+        return file_headers
