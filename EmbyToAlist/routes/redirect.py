@@ -45,9 +45,8 @@ async def redirect(item_id, filename, request: fastapi.Request):
             # 拼接完整的URL，如果query为空则不加问号
             redirected_url = f"{request.base_url}preventRedirect{request.url.path}{'?' + request.url.query if request.url.query else ''}"
             logger.info("Redirected Url: " + redirected_url)
-            return temporary_redirect(
-                redirected_url=redirected_url,
-            )
+            # 目前还没有创建RawLinkManager，所以不能用temporary_redirect
+            return fastapi.responses.RedirectResponse(url=redirected_url, status_code=307)
         
         file_info.path = transform_file_path(file_info.path)
     
