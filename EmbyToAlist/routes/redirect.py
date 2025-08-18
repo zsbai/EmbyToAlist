@@ -45,7 +45,9 @@ async def redirect(item_id, filename, request: fastapi.Request):
             # 拼接完整的URL，如果query为空则不加问号
             redirected_url = f"{request.base_url}preventRedirect{request.url.path}{'?' + request.url.query if request.url.query else ''}"
             logger.info("Redirected Url: " + redirected_url)
-            return fastapi.responses.RedirectResponse(url=redirected_url, status_code=302)
+            return temporary_redirect(
+                redirected_url=redirected_url,
+            )
         
         file_info.path = transform_file_path(file_info.path)
     

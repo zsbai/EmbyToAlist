@@ -93,7 +93,7 @@ class RawLinkManager():
         async with self.client.stream("GET", self.path, headers={
             "user-agent": self.ua
             }) as response:
-            if response.status_code in {302, 301}:
+            if response.status_code in {302, 301, 307, 308}:
                 location = response.headers.get("Location")
                 if location:
                     logger.debug(f"Strm file redirected to {location}")

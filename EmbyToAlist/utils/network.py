@@ -95,7 +95,7 @@ async def temporary_redirect(raw_link_manager: 'RawLinkManager') -> fastapi.Resp
     :return fastapi.Response: 重定向到alist直链的响应
     """
     raw_url = await raw_link_manager.get_raw_url()
-    return fastapi.responses.RedirectResponse(url=raw_url, status_code=302)
+    return fastapi.responses.RedirectResponse(url=raw_url, status_code=307)
 
 def verify_download_response(resposne: httpx.Response):
     """验证status_code, 验证响应header
