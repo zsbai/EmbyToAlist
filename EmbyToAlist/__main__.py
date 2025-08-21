@@ -14,7 +14,12 @@ async def lifespan(app: fastapi.FastAPI):
     ClientManager.init_client()
     if CACHE_ENABLE:
         AppContext.init(CACHE_PATH)
+        # 启动缓存清理调度器
+        await AppContext.start_scheduler()
     yield
+    if CACHE_ENABLE:
+        # 停止调度器
+        await AppContext.stop_scheduler()
     await ClientManager.close_client()
 
 app = fastapi.FastAPI(lifespan=lifespan)

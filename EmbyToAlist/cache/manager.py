@@ -135,6 +135,8 @@ class TaskManager():
 class AppContext():
     _cache_system: 'CacheSystem' = None
     _task_manager: TaskManager = None
+    _scheduler = None
+    _cleanup_manager = None
     
     @classmethod
     def init(cls, root_dir: str):
@@ -146,6 +148,45 @@ class AppContext():
         cls._cache_system = CacheSystem(root_dir)
         
     @classmethod
+    async def start_scheduler(cls):
+        """启动调度器和清理管理器"""
+        try:
+            if cls._scheduler is None:
+                from .scheduler import CacheScheduler
+                from .cleanup import CacheCleanupManager
+                
+                cls._scheduler = CacheScheduler()
+                cls._cleanup_manager = CacheCleanupManager(
+                    cls._cache_system.storage, 
+                    cls._scheduler
+                )
+                
+                # 注册清理任务
+                cls._cleanup_manager.register_cleanup_tasks()
+                
+                # 启动调度器
+                await cls._scheduler.start()
+                logger.info("Cache scheduler and cleanup manager started")
+        except Exception as e:
+            logger.error(f"Failed to start cache scheduler: {e}")
+            # 清理部分初始化的资源
+            if cls._scheduler:
+                try:
+                    await cls._scheduler.stop()
+                except Exception:
+                    pass
+                cls._scheduler = None
+                cls._cleanup_manager = None
+            raise
+    
+    @classmethod
+    async def stop_scheduler(cls):
+        """停止调度器"""
+        if cls._scheduler:
+            await cls._scheduler.stop()
+            logger.info("Cache scheduler stopped")
+        
+    @classmethod
     def get_cache_system(cls) -> 'CacheSystem':
         return cls._cache_system
     
@@ -154,3 +195,11 @@ class AppContext():
         if cls._task_manager is None:
             cls._task_manager = TaskManager()
         return cls._task_manager
+    
+    @classmethod
+    def get_scheduler(cls):
+        return cls._scheduler
+    
+    @classmethod
+    def get_cleanup_manager(cls):
+        return cls._cleanup_manager

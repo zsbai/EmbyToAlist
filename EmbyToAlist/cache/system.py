@@ -103,7 +103,8 @@ class CacheSystem():
                     self.storage.write_to_disk(
                         writer=writer,
                         file_info=tail_request_info.file_info,
-                        range_info=tail_request_info.range_info
+                        range_info=tail_request_info.range_info,
+                        item_info=tail_request_info.item_info
                     )
                 )
             
@@ -171,7 +172,8 @@ class CacheSystem():
                     self.storage.write_to_disk(
                         writer=writer,
                         file_info=request_info.file_info,
-                        range_info=request_info.range_info
+                        range_info=request_info.range_info,
+                        item_info=request_info.item_info
                     )
                 )
                 

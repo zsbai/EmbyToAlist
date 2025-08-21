@@ -213,7 +213,8 @@ class FileStorage:
         self,
         writer: ChunksWriter,
         file_info: FileInfo,
-        range_info: RangeInfo
+        range_info: RangeInfo,
+        item_info: Optional['ItemInfo'] = None
     ):
         """
         将内存缓存写入到磁盘
@@ -265,15 +266,17 @@ class FileStorage:
             final_path = cache_dir / fname
             await aiofiles.os.rename(temp_path, final_path)
             logger.info(f"Cache file written: {final_path}")
-            await self._update_cache_stats(final_path, file_headers)
+            await self._update_cache_stats(final_path, file_headers, item_info)
         
-    async def _update_cache_stats(self, file_path: Path, file_headers: Optional[FileHeaders] = None):
+    async def _update_cache_stats(self, file_path: Path, file_headers: Optional[FileHeaders] = None, 
+                                 item_info: Optional['ItemInfo'] = None):
         """
         更新缓存统计信息
         
         Args:
             file_path (Path): 缓存文件路径
             file_headers (Optional[FileHeaders]): 文件头信息
+            item_info (Optional[ItemInfo]): 媒体项信息，用于评分计算
         """
         file_size = file_path.stat().st_size
         cache_dir = file_path.parent
@@ -288,8 +291,26 @@ class FileStorage:
             'size': file_size,
             'created_at': file_path.stat().st_ctime,
             'last_read_time': file_path.stat().st_atime,
-            'score': 100  # 初始分数
+            'score': 400,  # 默认分数，会被重新计算
+            'access_count': 1
         }
+        
+        # 添加媒体信息用于评分
+        if item_info:
+            cache_record.update({
+                'item_type': item_info.item_type,
+                'in_progress': item_info.in_progress,
+                'item_id': item_info.item_id,
+                'tvshows_info': item_info.tvshows_info.__dict__ if item_info.tvshows_info else None
+            })
+        else:
+            # 默认值
+            cache_record.update({
+                'item_type': 'movie',
+                'in_progress': False,
+                'item_id': 0,
+                'tvshows_info': None
+            })
         
         # 始终设置头信息字段，确保数据库结构一致
         if file_headers:
@@ -305,13 +326,30 @@ class FileStorage:
         if is_new:
             # 如果不存在，则插入新记录
             self.db.insert_one(cache_record)
+            
+            # 为新缓存计算初始分数 (避免循环导入)
+            try:
+                from ..score_calculator import calculate_cache_score
+                new_score = calculate_cache_score(cache_record)
+                
+                # 更新分数
+                self.db.update(
+                    fields={'score': new_score},
+                    condition=lambda q: q.path == str(cache_dir)
+                )
+            except Exception as e:
+                logger.warning(f"Failed to calculate initial score: {e}, using default")
+            
         else:
-            # 如果存在，则更新大小和头信息
+            # 如果存在，则更新大小、访问计数和头信息
             def update_fields(doc):
-                fields = {'size': doc.get('size', 0) + file_size}
+                fields = {
+                    'size': doc.get('size', 0) + file_size,
+                    'access_count': doc.get('access_count', 1) + 1,
+                    'last_read_time': file_path.stat().st_atime
+                }
                 
                 # 始终更新头信息字段，确保与当前后端状态一致
-                # 如果当前后端有头信息，则更新；如果没有，则清除旧的头信息
                 if file_headers:
                     fields['etag'] = file_headers.etag
                     fields['last_modified'] = file_headers.last_modified
@@ -328,6 +366,29 @@ class FileStorage:
                 fields=update_fields,
                 condition=lambda q: q.path == str(cache_dir)
             )
+            
+            # 重新计算分数（访问时） - 延迟执行避免阻塞
+            try:
+                updated_record = self.db.search(lambda q: q.path == str(cache_dir))[0]
+                from ..score_calculator import calculate_cache_score
+                new_score = calculate_cache_score(updated_record)
+                
+                # 异步更新分数，避免阻塞主流程
+                import asyncio
+                async def update_score():
+                    try:
+                        self.db.update(
+                            fields={'score': new_score},
+                            condition=lambda q: q.path == str(cache_dir)
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to update score: {e}")
+                
+                # 不等待完成，避免阻塞
+                asyncio.create_task(update_score())
+                
+            except Exception as e:
+                logger.warning(f"Failed to recalculate score: {e}")
 
         # 更新全局统计
         async with self.db_lock:

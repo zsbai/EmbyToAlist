@@ -42,3 +42,28 @@ HIGH_COMPAT_MEDIA_CLIENTS = [client.strip().lower() for client in HIGH_COMPAT_ME
 LOW_COMPAT_MEDIA_CLIENTS = env.list("LOW_COMPAT_MEDIA_CLIENTS", subcast=str, default=["vlc"])
 """对Range请求支持较差的播放器列表，默认vlc，当前播放器列表会尝试使用其他缓存策略"""
 LOW_COMPAT_MEDIA_CLIENTS = [client.strip().lower() for client in LOW_COMPAT_MEDIA_CLIENTS]
+
+# CACHE CLEANUP CONFIGURATION 缓存清理配置
+CACHE_MAX_SIZE_GB = env.float("CACHE_MAX_SIZE_GB", default=50.0)
+"""最大缓存大小(GB)，默认50GB"""
+
+CACHE_CLEANUP_THRESHOLD = env.float("CACHE_CLEANUP_THRESHOLD", default=0.8)
+"""缓存清理触发阈值，默认0.8（80%）"""
+
+CACHE_CLEANUP_TARGET = env.float("CACHE_CLEANUP_TARGET", default=0.6)  
+"""缓存清理目标，默认0.6（60%）"""
+
+CACHE_MIN_SCORE_THRESHOLD = env.float("CACHE_MIN_SCORE_THRESHOLD", default=200.0)
+"""最低分数阈值，低于此分数的缓存会被优先清理"""
+
+CACHE_PROTECTION_DAYS = env.int("CACHE_PROTECTION_DAYS", default=3)
+"""缓存保护天数，最近N天访问的缓存不会被清理"""
+
+CACHE_SCORE_RECALC_HOURS = env.int("CACHE_SCORE_RECALC_HOURS", default=24)
+"""分数重新计算间隔（小时），默认24小时"""
+
+CACHE_SIZE_CHECK_HOURS = env.int("CACHE_SIZE_CHECK_HOURS", default=1)
+"""缓存大小检查间隔（小时），默认1小时"""
+
+CACHE_WEEKLY_CLEANUP = env.bool("CACHE_WEEKLY_CLEANUP", default=False)
+"""是否启用每周定时清理，默认关闭（推荐关闭，缓存应该长期保留）"""
