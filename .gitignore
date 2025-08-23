@@ -2,6 +2,7 @@ test_assets/*
 test/*
 *.test
 cache/*
+.claude/*
 GEMINI.md
 
 # Created by https://www.toptal.com/developers/gitignore/api/python,windows,visualstudiocode,macos
