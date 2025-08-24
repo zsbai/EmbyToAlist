@@ -27,7 +27,7 @@ build/
 docker-compose*.yml
 compose*.yaml
 
-**/cache/
+cache/
 
 test/
 tests*/
