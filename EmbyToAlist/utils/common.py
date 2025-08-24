@@ -1,8 +1,10 @@
 import asyncio
+import re
 from functools import wraps, partial
 
 import httpx
 from loguru import logger
+import fastapi
 
 from typing import Optional
 
@@ -65,3 +67,20 @@ def get_content_type(container) -> str:
 
     # 返回对应的Content-Type，如果未找到，返回一个默认值
     return content_types.get(container.lower(), 'application/octet-stream')
+
+def extract_api_key(request: fastapi.Request):
+    """从Emby的请求中提取API密钥"""
+    api_key = request.query_params.get('api_key') or request.query_params.get('X-Emby-Token')
+    if not api_key:
+        # For Infuse
+        auth_header = request.headers.get('X-Emby-Authorization')
+        if auth_header:
+            match_token = re.search(r'Token="([^"]+)"', auth_header)
+            if match_token:
+                api_key = match_token.group(1)
+        else:
+            # Sometimes Fileball uses x-emby-token header
+            auth_header = request.headers.get('x-emby-token')
+            if auth_header:
+                api_key = auth_header
+    return api_key
