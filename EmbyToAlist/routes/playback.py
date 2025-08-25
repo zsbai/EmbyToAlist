@@ -1,12 +1,13 @@
 import fastapi
 from loguru import logger
 
-from ..utils.common import ClientManager
+from ..utils.common import ClientManager, extract_api_key
 from ..service.emby.helpers import build_playback_info
 from ..service.alist.manager import RawLinkManager
 from ..utils.path import transform_file_path, should_redirect_to_alist
 from ..models import FileInfo
-from ..config import EMBY_SERVER, ENABLE_UA_PASSTHROUGH
+from ..config import ENABLE_UA_PASSTHROUGH
+from ..service.emby.client import EmbyClient
 
 router = fastapi.APIRouter()
 
@@ -17,18 +18,32 @@ router = fastapi.APIRouter()
 @router.post('/emby/Items/{item_id}/PlaybackInfo')
 async def playback_info(item_id: str, request: fastapi.Request):
     logger.debug(f"Received request for PlaybackInfo with item_id: {item_id}")
-    client = ClientManager.get_client()
+    api_key = extract_api_key(request)
+    emby_client = EmbyClient(api_key=api_key, client=ClientManager.get_client())
     
-    params = request.query_params
-    remote_url = f"{EMBY_SERVER}/emby/Items/{item_id}/PlaybackInfo"+f"?{params}"
+    params = dict(request.query_params)
     
     try:
         # Forward the request to the remote server
-        response = await client.request(
+        # 尝试 JSON 负载，否则以原始 body 透传
+        json_body = None
+        content = None
+        try:
+            json_body = await request.json()
+        except Exception:
+            content = await request.body()
+
+        # 过滤不该直传的请求头
+        blocked = {"host", "content-length", "connection", "keep-alive", "proxy-connection", "te", "trailer", "transfer-encoding", "upgrade"}
+        fwd_headers = {k: v for k, v in request.headers.items() if k.lower() not in blocked}
+
+        response = await emby_client.raw_request(
             method=request.method,
-            url=remote_url,
-            headers=request.headers,
-            content=await request.body(),
+            path=f"/emby/Items/{item_id}/PlaybackInfo",
+            params=params,
+            headers=fwd_headers,
+            json_body=json_body,
+            content=content,
         )
         response.raise_for_status()
         
@@ -39,8 +54,10 @@ async def playback_info(item_id: str, request: fastapi.Request):
             content="Internal Server Error",
             status_code=500,
         )
-    
-    files_info: list[FileInfo] = build_playback_info(data)
+    # 从 PlaybackInfo 的 MediaSources 构建文件信息列表
+    files_info: list[FileInfo] = [
+        build_playback_info(ms) for ms in data.get('MediaSources', [])
+    ]
     for index, each in enumerate(files_info):
         
         # 如果需要alist处理，如云盘路径，或strm流，提前通过异步缓存alist直链

@@ -1,43 +1,4 @@
-import fastapi
-from loguru import logger
-
-from ...config import EMBY_SERVER
 from ...models import FileInfo, ItemInfo, TVShowsInfo
-from ...utils.common import ClientManager
-
-async def request_emby_json(api_url: str) -> dict:
-    """
-    请求Emby API并返回JSON数据
-
-    Args:
-        api_url (str): Emby API的URL
-    Returns:
-        dict: 返回的JSON数据
-    """
-    client = ClientManager.get_client()
-    try:
-        logger.debug(f"Requesting URL: {api_url}")
-        response = await client.get(api_url)
-        response.raise_for_status()
-        return response.json()
-    except Exception as e:
-        logger.error(f"Failed to request Emby API: {e}")
-        raise fastapi.HTTPException(status_code=500, detail=f"Failed to request Emby server, {e}")
-
-
-def emby_api(path: str, **params) -> str:
-    """构建Emby API请求URL
-
-    Args:
-        path (str): Emby API路径
-        **params: 其他查询参数
-    Returns:
-        str: 完整的Emby API请求URL
-    """
-    query = '&'.join(f"{k}={v}" for k, v in params.items() if v is not None)
-    url = f"{EMBY_SERVER}{path}?{query}"
-    logger.debug(f"Emby API query: {url}")
-    return url
 
 
 def build_item_info(item: dict) -> ItemInfo:

@@ -1,7 +1,8 @@
 from ...models import ItemInfo
-from .helpers import build_item_info, emby_api, request_emby_json
+from .helpers import build_item_info
+from .client import EmbyClient
 
-async def get_resume_list(user_id: str, api_key: str) -> list[ItemInfo]:
+async def get_resume_list(client: EmbyClient, user_id: str) -> list[ItemInfo]:
     """获取用户的播放记录列表
 
     Args:
@@ -12,8 +13,6 @@ async def get_resume_list(user_id: str, api_key: str) -> list[ItemInfo]:
         list[ItemInfo]: 包含Item信息的dataclass列表
     """
 
-    resume_list_api = emby_api(f"/emby/Users/{user_id}/Items/Resume", api_key=api_key, Limit=10)
-
-    data = await request_emby_json(resume_list_api)
+    data = await client.get_json(f"/emby/Users/{user_id}/Items/Resume", params={"Limit": 10})
 
     return [build_item_info(i) for i in data.get('Items', [])]

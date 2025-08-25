@@ -5,9 +5,10 @@ from ..config import CACHE_ENABLE, INITIAL_CACHE_SIZE_OF_TAIL, HIGH_COMPAT_MEDIA
 from ..models import FileInfo, ItemInfo, RequestInfo, CacheRangeStatus, RangeInfo, response_headers_template
 from ..utils.path import transform_file_path, should_redirect_to_alist
 from ..utils.network import reverse_proxy, temporary_redirect
-from ..utils.common import get_content_type, extract_api_key
+from ..utils.common import get_content_type, extract_api_key, ClientManager
 from ..service.alist.manager import RawLinkManager
 from ..service.emby.items import get_item_info, get_file_info
+from ..service.emby.client import EmbyClient
 from ..cache.manager import AppContext
 
 router = fastapi.APIRouter()
@@ -30,8 +31,10 @@ async def redirect(item_id, filename, request: fastapi.Request):
     if not media_source_id:
         raise fastapi.HTTPException(status_code=400, detail="MediaSourceId is required")
     
-    file_info: FileInfo = await get_file_info(item_id, api_key, media_source_id)
-    item_info: ItemInfo = await get_item_info(item_id, api_key, user_id)
+    emby_client = EmbyClient(api_key=api_key, client=ClientManager.get_client())
+
+    file_info: FileInfo = await get_file_info(emby_client, item_id, media_source_id)
+    item_info: ItemInfo = await get_item_info(emby_client, item_id, user_id)
     
     logger.info(f"Requested Item ID: {item_id}")
     logger.info("MediaFile Mount Path: " + file_info.path)
@@ -96,7 +99,8 @@ async def redirect(item_id, filename, request: fastapi.Request):
         user_agent=request.headers.get('User-Agent'),
     )
     
-    if any(player in request.headers.get('User-Agent').lower() for player in LOW_COMPAT_MEDIA_CLIENTS):
+    ua_lower = (request.headers.get('User-Agent') or '').lower()
+    if any(player in ua_lower for player in LOW_COMPAT_MEDIA_CLIENTS):
         request_info.is_LOW_COMPAT_MEDIA_CLIENTS = True
         return await temporary_redirect(
             raw_link_manager=raw_link_manager,
@@ -112,8 +116,8 @@ async def redirect(item_id, filename, request: fastapi.Request):
         request_info.range_info.cache_range = (0, cache_file_size)
         
         # check video player
-        # if 'mpv' in request.headers.get('User-Agent').lower():
-        if any(player in request.headers.get('User-Agent').lower() for player in HIGH_COMPAT_MEDIA_CLIENTS):
+        # if 'mpv' in ua_lower:
+        if any(player in ua_lower for player in HIGH_COMPAT_MEDIA_CLIENTS):
             request_info.is_HIGH_COMPAT_MEDIA_CLIENTS = True
             response_end = cache_file_size - 1
         else:
