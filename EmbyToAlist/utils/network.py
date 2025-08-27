@@ -10,7 +10,7 @@ from ..cache.manager import AppContext
 from ..cache.system import CacheSystem
 from typing import AsyncGenerator, TYPE_CHECKING
 if TYPE_CHECKING:
-    from ..service.alist.manager import RawLinkManager
+    from ..service.manager import RawLinkManager
 
 async def reverse_proxy(
     cache: AsyncGenerator[bytes, None],

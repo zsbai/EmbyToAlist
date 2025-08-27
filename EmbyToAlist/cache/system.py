@@ -11,7 +11,7 @@ from ..utils.common import ClientManager
 from ..cache.writer import ChunksWriter
 from ..cache.storage.file_storage import FileStorage
 from ..service.emby.items import get_next_episode_item_info
-from ..service.alist.manager import RawLinkManager
+from ..service.manager import RawLinkManager
 from typing import AsyncGenerator, Optional, TYPE_CHECKING
 if TYPE_CHECKING:
     import httpx

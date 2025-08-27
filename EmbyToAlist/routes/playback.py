@@ -3,7 +3,7 @@ from loguru import logger
 
 from ..utils.common import ClientManager, extract_api_key
 from ..service.emby.helpers import build_playback_info
-from ..service.alist.manager import RawLinkManager
+from ..service.manager import RawLinkManager
 from ..utils.path import transform_file_path, should_redirect_to_alist
 from ..models import FileInfo
 from ..config import ENABLE_UA_PASSTHROUGH

@@ -6,10 +6,10 @@ import fastapi
 from aiocache import Cache
 from loguru import logger
 
-from .api import get_alist_raw_url
-from ...cache.manager import AppContext
-from ...config import ENABLE_UA_PASSTHROUGH
-from ...utils.common import ClientManager
+from .alist.rawlink import get_alist_raw_url
+from ..cache.manager import AppContext
+from ..config import ENABLE_UA_PASSTHROUGH
+from ..utils.common import ClientManager
 
 class RawLinkManager():
     """管理alist直链获取任务和缓存
@@ -61,6 +61,9 @@ class RawLinkManager():
         await self.task_manager.create_task(RawLinkManager, self.path, task, sub_key=self.task_sub_key, ttl=600)
 
     async def _wrapped_download(self):
+        """
+        包装获取直链的协程函数，加入协程池
+        """
         try:
             raw_url = await self.cache_raw_url()
             await self.cache.set(self.key, raw_url, ttl=3600)
