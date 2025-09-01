@@ -7,6 +7,9 @@ EMBY_SERVER = env.str("EMBY_SERVER")
 
 ALIST_SERVER = env.str("ALIST_SERVER")
 ALIST_API_KEY = env.str("ALIST_API_KEY")
+RAW_LINK_PROVIDER = env.str("RAW_LINK_PROVIDER", default="alist").strip().lower()
+RAW_LINK_EMBY_SERVER = env.str("RAW_LINK_EMBY_SERVER", default="").strip()
+RAW_LINK_EMBY_KEY = env.str("RAW_LINK_EMBY_KEY", default="").strip()
 
 ENABLE_UA_PASSTHROUGH = env.bool("ENABLE_UA_PASSTHROUGH", default=False)
 """是否启用UA透传，默认False，启用后会将请求的User-Agent透传给alist，会导致预缓存失效"""

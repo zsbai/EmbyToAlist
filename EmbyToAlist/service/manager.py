@@ -7,8 +7,9 @@ from aiocache import Cache
 from loguru import logger
 
 from .alist.rawlink import get_alist_raw_url
+from .emby.rawlink import get_emby_raw_url
 from ..cache.manager import AppContext
-from ..config import ENABLE_UA_PASSTHROUGH
+from ..config import ENABLE_UA_PASSTHROUGH, RAW_LINK_PROVIDER
 from ..utils.common import ClientManager
 
 class RawLinkManager():
@@ -76,15 +77,16 @@ class RawLinkManager():
     async def cache_raw_url(self) -> str:
         """获取alist直链并缓存
         1. 如果是strm文件，请求strm，缓存真正的文件链接
-        2. 如果是普通文件，使用alist的get_alist_raw_url方法获取直链
+        2. 如果是普通文件，使用 provider 获取直链（alist 或 emby）
         """
+        provider = (RAW_LINK_PROVIDER or 'alist').lower()
+        if provider == 'emby':
+            # Emby 模式：忽略 is_strm，直接通过第二台 Emby 解析直链
+            return await get_emby_raw_url(self.path)
+        # 默认/Alist 模式
         if self.is_strm:
             return await self.precheck_strm()
-        else:
-            return await get_alist_raw_url(
-                self.path,
-                self.ua
-            )
+        return await get_alist_raw_url(self.path, self.ua)
 
     async def precheck_strm(self) -> str:
         """预先请求strm文件地址，以便在请求时直接返回直链

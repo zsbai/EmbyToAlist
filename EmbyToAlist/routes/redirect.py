@@ -1,7 +1,7 @@
 import fastapi
 from loguru import logger
 
-from ..config import CACHE_ENABLE, INITIAL_CACHE_SIZE_OF_TAIL, HIGH_COMPAT_MEDIA_CLIENTS, LOW_COMPAT_MEDIA_CLIENTS
+from ..config import CACHE_ENABLE, INITIAL_CACHE_SIZE_OF_TAIL, HIGH_COMPAT_MEDIA_CLIENTS, LOW_COMPAT_MEDIA_CLIENTS, RAW_LINK_PROVIDER
 from ..models import FileInfo, ItemInfo, RequestInfo, CacheRangeStatus, RangeInfo, response_headers_template
 from ..utils.path import transform_file_path, should_redirect_to_alist
 from ..utils.network import reverse_proxy, temporary_redirect
@@ -40,16 +40,13 @@ async def redirect(item_id, filename, request: fastapi.Request):
     logger.info("MediaFile Mount Path: " + file_info.path)
     logger.debug("Request Headers: " + str(request.headers))        
     
-    # transform file path to alist path
-    if not file_info.is_strm:
+    # transform path only when using alist provider
+    if not file_info.is_strm and (RAW_LINK_PROVIDER or '').lower() == 'alist':
         # if checkFilePath return False：return Emby originalUrl
         if not should_redirect_to_alist(file_info.path):
-            # 拼接完整的URL，如果query为空则不加问号
             redirected_url = f"{request.base_url}preventRedirect{request.url.path}{'?' + request.url.query if request.url.query else ''}"
             logger.info("Redirected Url: " + redirected_url)
-            # 目前还没有创建RawLinkManager，所以不能用temporary_redirect
             return fastapi.responses.RedirectResponse(url=redirected_url, status_code=307)
-        
         file_info.path = transform_file_path(file_info.path)
     
     # 如果满足alist直链条件，提前通过异步缓存alist直链
