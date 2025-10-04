@@ -111,7 +111,7 @@ async def redirect(item_id, filename, request: fastapi.Request):
     cache_file_size = file_info.cache_file_size
     if start_byte < cache_file_size:
         logger.debug("Match cache condition 1: Requesting file start")
-        request_info.range_info.cache_range = (0, cache_file_size)
+        request_info.range_info.cache_range = (0, cache_file_size - 1)
         
         # check video player
         if request_info.is_HIGH_COMPAT_MEDIA_CLIENTS:

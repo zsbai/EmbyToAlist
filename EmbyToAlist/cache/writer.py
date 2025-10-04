@@ -59,10 +59,10 @@ class ChunksWriter():
         
         if self.cache_range_start == 0:
             # 读取头部
-            self.request_header['Range'] = f"bytes=0-{self.cache_range_end - 1}"
+            self.request_header['Range'] = f"bytes=0-{self.cache_range_end}"
         else:
             # 读取尾部
-            self.request_header['Range'] = f"bytes={self.cache_range_start}-"
+            self.request_header['Range'] = f"bytes={self.cache_range_start}-{self.cache_range_end}"
 
         logger.debug(f"Header of File Source Request: {self.request_header}")
 

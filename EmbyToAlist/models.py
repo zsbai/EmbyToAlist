@@ -75,7 +75,7 @@ class FileHeaders:
     
 @dataclass
 class RangeInfo:
-    """ 范围信息 """
+    """ 范围信息, HTTP Range 标准 """
     
     request_range: tuple[int, int]
     """ 请求的范围 """
