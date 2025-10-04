@@ -5,8 +5,8 @@ from fastapi import HTTPException
 from httpx import RequestError, TransportError
 from loguru import logger
 
-from ...config import RAW_LINK_EMBY_SERVER, RAW_LINK_EMBY_KEY
-from ...utils.common import ClientManager
+from ....config import RAW_LINK_EMBY_SERVER, RAW_LINK_EMBY_KEY
+from ....utils.common import ClientManager
 from .client import EmbyClient
 from .exceptions import EmbyHTTPError
 

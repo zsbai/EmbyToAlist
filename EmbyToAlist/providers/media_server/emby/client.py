@@ -4,7 +4,7 @@ import httpx
 from loguru import logger
 from typing import Any, Optional
 
-from ...config import EMBY_SERVER
+from ....config import EMBY_SERVER
 from .exceptions import EmbyHTTPError
 
 class EmbyClient:

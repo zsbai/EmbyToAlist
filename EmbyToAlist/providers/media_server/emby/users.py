@@ -1,4 +1,4 @@
-from ...models import ItemInfo
+from ....models import ItemInfo
 from .helpers import build_item_info
 from .client import EmbyClient
 

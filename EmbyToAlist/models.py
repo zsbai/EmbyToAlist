@@ -5,7 +5,7 @@ from enum import StrEnum
 from typing import Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .service.manager import RawLinkManager
+    from .providers.manager import RawLinkManager
 
 class CacheRangeStatus(StrEnum):
     """ 请求的范围与本地缓存的匹配状态 """

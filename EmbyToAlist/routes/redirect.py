@@ -6,9 +6,9 @@ from ..models import FileInfo, ItemInfo, RequestInfo, CacheRangeStatus, RangeInf
 from ..utils.path import transform_file_path, should_redirect_to_alist
 from ..utils.network import stream_handler, temporary_redirect
 from ..utils.common import get_content_type, extract_api_key, ClientManager
-from ..service.manager import RawLinkManager
-from ..service.emby.items import get_item_info, get_file_info
-from ..service.emby.client import EmbyClient
+from ..providers.manager import RawLinkManager
+from ..providers.media_server.emby.items import get_item_info, get_file_info
+from ..providers.media_server.emby.client import EmbyClient
 from ..cache.manager import AppContext
 
 router = fastapi.APIRouter()

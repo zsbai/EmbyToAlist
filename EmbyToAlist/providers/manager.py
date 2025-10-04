@@ -6,8 +6,8 @@ import fastapi
 from aiocache import Cache
 from loguru import logger
 
-from .alist.rawlink import get_alist_raw_url
-from .emby.rawlink import get_emby_raw_url
+from .rawlink.alist.rawlink import get_alist_raw_url
+from .media_server.emby.rawlink import get_emby_raw_url
 from ..cache.manager import AppContext
 from ..config import ENABLE_UA_PASSTHROUGH, RAW_LINK_PROVIDER
 from ..utils.common import ClientManager

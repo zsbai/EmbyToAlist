@@ -1,6 +1,6 @@
 from loguru import logger
 
-from ...models import ItemInfo, FileInfo
+from ....models import ItemInfo, FileInfo
 from .helpers import build_playback_info, build_item_info
 from .client import EmbyClient
 from typing import Optional

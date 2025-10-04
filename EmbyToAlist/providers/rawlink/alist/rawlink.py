@@ -4,8 +4,8 @@ from httpx import ReadTimeout, RequestError
 from fastapi import HTTPException
 from loguru import logger
 
-from ...config import ALIST_SERVER, ALIST_API_KEY
-from ...utils.common import ClientManager
+from ....config import ALIST_SERVER, ALIST_API_KEY
+from ....utils.common import ClientManager
 
 # return Alist Raw Url
 async def get_alist_raw_url(file_path: str, ua: str, max_retries: int = 5, retry_delay: float = 0.1) -> str:

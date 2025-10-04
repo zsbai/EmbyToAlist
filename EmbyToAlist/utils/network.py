@@ -10,7 +10,7 @@ from ..cache.manager import AppContext
 from ..cache.system import CacheSystem
 from ..utils.common import ClientManager
 if TYPE_CHECKING:
-    from ..service.manager import RawLinkManager
+    from ..providers.manager import RawLinkManager
 
 async def stream_handler(
     cache: Optional[AsyncGenerator[bytes, None]],

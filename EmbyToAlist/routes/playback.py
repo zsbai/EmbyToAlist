@@ -2,12 +2,12 @@ import fastapi
 from loguru import logger
 
 from ..utils.common import ClientManager, extract_api_key
-from ..service.emby.helpers import build_playback_info
-from ..service.manager import RawLinkManager
+from ..providers.media_server.emby.helpers import build_playback_info
+from ..providers.manager import RawLinkManager
 from ..utils.path import transform_file_path, should_redirect_to_alist
 from ..models import FileInfo
 from ..config import ENABLE_UA_PASSTHROUGH
-from ..service.emby.client import EmbyClient
+from ..providers.media_server.emby.client import EmbyClient
 
 router = fastapi.APIRouter()
 

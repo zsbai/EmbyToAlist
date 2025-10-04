@@ -31,11 +31,13 @@ class CacheScheduler:
         self.running = False
         self.scheduler_task: Optional[asyncio.Task] = None
     
-    def register_task(self, 
-                     name: str,
-                     func: Callable,
-                     interval_seconds: int,
-                     run_immediately: bool = False):
+    def register_task(
+        self, 
+        name: str,
+        func: Callable,
+        interval_seconds: int,
+        run_immediately: bool = False
+    ):
         """注册定时任务
         
         Args:

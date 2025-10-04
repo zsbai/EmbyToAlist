@@ -6,7 +6,7 @@ import httpx
 from loguru import logger
 import fastapi
 
-from ..service.emby.client import EmbyClient
+from ..providers.media_server.emby.client import EmbyClient
 from typing import Optional, TYPE_CHECKING
 if TYPE_CHECKING:
     pass

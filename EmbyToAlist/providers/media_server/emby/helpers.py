@@ -1,4 +1,4 @@
-from ...models import FileInfo, ItemInfo, TVShowsInfo
+from ....models import FileInfo, ItemInfo, TVShowsInfo
 
 
 def build_item_info(item: dict) -> ItemInfo:
