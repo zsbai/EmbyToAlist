@@ -1,25 +1,25 @@
 import asyncio
+from typing import AsyncGenerator, Optional, TYPE_CHECKING
 
 import fastapi
 import httpx
 from loguru import logger
 
-from ..config import FORCE_CLIENT_RECONNECT
 from ..models import RequestInfo, CacheRangeStatus, FileHeaders
 from ..cache.manager import AppContext
 from ..cache.system import CacheSystem
-from typing import AsyncGenerator, TYPE_CHECKING
+from ..utils.common import ClientManager
 if TYPE_CHECKING:
     from ..service.manager import RawLinkManager
 
-async def reverse_proxy(
-    cache: AsyncGenerator[bytes, None],
+async def stream_handler(
+    cache: Optional[AsyncGenerator[bytes, None]],
     response_headers: dict,
     request_info: RequestInfo,
     status_code: int = 206
-                        ):
+    ) -> fastapi.responses.StreamingResponse:
     """
-    读取缓存数据和URL，返回合并后的流
+    将缓存数据和后端数据合并成一个流返回给客户端。
 
     :param cache: 缓存数据
     :param response_headers: 返回的响应头，包含调整过的range以及content-type
@@ -45,61 +45,120 @@ async def reverse_proxy(
         logger.warning(f"Failed to retrieve cached headers: {e}")
     
     async def merged_stream() -> AsyncGenerator[bytes, None]:
-        
+
         try:
-            data_read = 0
-            # 如果缓存存在，先 yield 出缓存数据
-            if cache is not None:
-                logger.debug("Cache exists, yielding from cache")
-                async for chunk in cache:
-                    data_read += len(chunk)
-                    logger.debug(f"Total data read from cache: {data_read} bytes")
+            cache_stream: Optional[AsyncGenerator[bytes, None]] = cache
+            # 如果缓存不存在，但是需要缓存，则启动缓存写入
+            if cache_stream is None and request_info.cache_range_status != CacheRangeStatus.NOT_CACHED:
+                logger.debug("Cache is None, start writing cache")
+                await cache_system.start_write_cache_file(request_info)
+                cache_stream = await cache_system.get_cache_file(request_info)
+
+            response_range = request_info.range_info.response_range
+            if response_range is None:
+                raise fastapi.HTTPException(status_code=500, detail="Response range is not set")
+
+            response_start, response_end = response_range
+            expected_total = response_end - response_start + 1
+            bytes_sent = 0
+
+            if cache_stream is not None:
+                logger.debug("Streaming from cache")
+                async for chunk in cache_stream:
+                    if not chunk:
+                        continue
                     yield chunk
-            else:
-                logger.debug("Cache is None, fetching from backend")
-                # 当缓存不存在且允许写缓存时，获取缓存写入器
-                if request_info.cache_range_status != CacheRangeStatus.NOT_CACHED:
-                    # 创建写入缓存任务
-                    await cache_system.start_write_cache_file(
-                        request_info
-                    )
-                    # 获取缓存读取器
-                    data = await cache_system.get_cache_file(
-                        request_info
-                    )
-                   
-                    logger.debug("Start merged_stream")
-                    
-                    async for chunk in data:
-                        data_read += len(chunk)
-                        yield chunk
-                    
-            resp_s, resp_e = request_info.range_info.response_range
-            logger.debug(f"Expected data read: {resp_e - resp_s + 1}, Actual data read: {data_read}")
-            logger.debug(f"Read from {resp_s} to {resp_e}")
-                    
-            if not request_info.is_HIGH_COMPAT_MEDIA_CLIENTS and not request_info.is_LOW_COMPAT_MEDIA_CLIENTS:
-                # 不是末尾则打断
-                if FORCE_CLIENT_RECONNECT and request_info.cache_range_status == CacheRangeStatus.PARTIALLY_CACHED:
-                    logger.info("Cache exhausted, breaking the connection")
-                    raise ForcedReconnectError()
-                    
-        except ForcedReconnectError as e:
-            logger.info(f"Expected ForcedReconnectError: {e}")
-            raise fastapi.HTTPException(status_code=500, detail="Force Reconnect")
-        except Exception as e:
-            logger.error(f"Reverse_proxy failed, {e}")
-            raise fastapi.HTTPException(status_code=500, detail="Reverse Proxy Failed")
+                    bytes_sent += len(chunk)
+                logger.debug(f"Cache streaming finished, bytes sent: {bytes_sent}")
+
+            remaining_total = expected_total - bytes_sent
+
+            # 此时判断缓存内容是否已经满足请求段
+            if remaining_total <= 0:
+                return
+
+            if request_info.is_HIGH_COMPAT_MEDIA_CLIENTS:
+                logger.debug("High compatibility client finished cache segment, ending stream")
+                if remaining_total > 0:
+                    logger.warning("High compatibility client expected to finish within cache, but remaining data detected")
+                return
+
+            reverse_start = response_start + bytes_sent
+            reverse_end = response_end
+            logger.debug(f"Falling back to reverse proxy from {reverse_start} to {reverse_end}")
+
+            async for chunk in reverse_proxy(request_info, reverse_start, reverse_end):
+                if not chunk:
+                    continue
+                remaining_total -= len(chunk)
+                if remaining_total < 0:
+                    # 截断多余数据，避免超出声明长度
+                    yield chunk[:remaining_total + len(chunk)]
+                    logger.warning("Reverse proxy provided more data than expected, truncating output")
+                    break
+                yield chunk
+                if remaining_total == 0:
+                    break
+
         except asyncio.CancelledError:
             logger.warning("Streaming cancelled by client")
             raise
-        
+        except Exception as e:
+            logger.error(f"Merged stream failed: {e}")
+            raise fastapi.HTTPException(status_code=502, detail="Reverse Proxy Failed")
+
     logger.debug(f"Response Headers: {response_headers}")
     return fastapi.responses.StreamingResponse(
         merged_stream(), 
         headers=response_headers, 
         status_code=status_code
         )
+
+async def reverse_proxy(
+    request_info: RequestInfo,
+    start: int,
+    end: int
+) -> AsyncGenerator[bytes, None]:
+    """通过直链反向代理剩余数据段"""
+
+    if start > end:
+        logger.debug("Reverse proxy start is greater than end, skipping")
+        return
+
+    if request_info.raw_link_manager is None:
+        raise fastapi.HTTPException(status_code=500, detail="Raw link manager is not initialized")
+
+    raw_url = await request_info.raw_link_manager.get_raw_url()
+    headers = {
+        "Range": f"bytes={start}-{end}",
+        "User-Agent": request_info.raw_link_manager.ua,
+    }
+
+    try:
+        parsed_url = httpx.URL(raw_url)
+        if parsed_url.host:
+            headers["Host"] = parsed_url.host
+    except Exception as e:
+        logger.warning(f"Failed to parse raw url host: {e}")
+
+    client = ClientManager.get_client()
+
+    try:
+        async with client.stream("GET", raw_url, headers=headers) as response:
+            if response.status_code not in {200, 206}:
+                logger.error(f"Reverse proxy unexpected status: {response.status_code}")
+                response.raise_for_status()
+
+            async for chunk in response.aiter_bytes():
+                yield chunk
+
+    except asyncio.CancelledError:
+        logger.warning("Reverse proxy stream cancelled by client")
+        raise
+    except Exception as e:
+        logger.error(f"Reverse proxy request failed: {e}")
+        raise fastapi.HTTPException(status_code=502, detail="Reverse Proxy Failed")
+
 
 async def temporary_redirect(raw_link_manager: 'RawLinkManager') -> fastapi.Response:
     """重定向到alist直链
@@ -110,34 +169,3 @@ async def temporary_redirect(raw_link_manager: 'RawLinkManager') -> fastapi.Resp
     """
     raw_url = await raw_link_manager.get_raw_url()
     return fastapi.responses.RedirectResponse(url=raw_url, status_code=307)
-
-def verify_download_response(resposne: httpx.Response):
-    """验证status_code, 验证响应header
-
-    Args:
-        resposne (httpx.Response): HTTPX响应对象
-    """
-    if resposne.status_code == 416:
-        logger.warning("Reponse Verification: 416 Range Not Satisfiable")
-        logger.debug(f"Valid Range: {resposne.headers.get('Content-Range')}")
-        raise ValueError("Reponse Verification Failed: Range Not Satisfiable")
-    if resposne.status_code == 400:
-        logger.warning("Reponse Verification: 400 Bad Request")
-        logger.debug(f"Response Text: {resposne.text}")
-        logger.debug(f"Response Headers: {resposne.headers}")
-        raise ValueError("Reponse Verification Failed: 400 Bad Request")
-    
-    resposne.raise_for_status()
-    
-    content_type = resposne.headers.get('Content-Type')
-    if "application/json;" in content_type:
-        logger.warning("Reponse Verification: JSON Response")
-        logger.debug(f"Response Text: {resposne.text}")
-        raise ValueError("Reponse Verification Failed: JSON Response")
-    
-
-class ForcedReconnectError(Exception):
-    """预期异常，用于强制播放器重新请求"""
-    def __init__(self, message="Expected Error, Force Break the Connection"):
-        self.message = message
-        super().__init__(message)

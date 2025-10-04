@@ -7,7 +7,7 @@ import aiofiles
 import aiofiles.os
 from loguru import logger
 
-from ...models import RequestInfo, CacheRangeStatus, FileInfo, RangeInfo, FileHeaders
+from ...models import ItemInfo, FileInfo, RangeInfo, FileHeaders
 from ...config import MEMORY_CACHE_ONLY
 from ..writer import ChunksWriter
 from ...utils.database import TinyDBHandler

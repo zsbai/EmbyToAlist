@@ -88,7 +88,8 @@ class TaskManager():
             task_type (str): 任务类型
             file_id (str): 文件ID
             task_instance (Any): 任务实例
-            sub_key (Any): 子键，默认为None   
+            sub_key (Any): 子键，默认为None 
+            ttl (Optional[int]): 任务过期时间，单位秒，默认为None表示不设置过期时间 
         """
         if ttl is None:
             ttl = self.default_ttl

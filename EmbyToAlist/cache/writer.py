@@ -71,8 +71,8 @@ class ChunksWriter():
             if response.status_code != 206:
                 raise ValueError(f"Expected 206 response, got {response.status_code}")
             
-            # logger.debug(f"File source response headers: {response.headers}")
             # 提取文件头信息
+            logger.debug(f"File Source Response Headers: {response.headers}")
             etag = response.headers.get('ETag')
             last_modified = response.headers.get('Last-Modified')
             content_disposition = response.headers.get('Content-Disposition')
@@ -89,7 +89,7 @@ class ChunksWriter():
                 self.file_headers = None
                 logger.debug("No headers found in response")
             
-            logger.debug("======== Cache write started =======")
+            logger.debug(f"======== Cache write started for range {self.cache_range_start}-{self.cache_range_end} =======")
             
             async for chunk in response.aiter_bytes(chunk_size):
                 # 写入缓存文件
@@ -98,11 +98,9 @@ class ChunksWriter():
                     self.condition.notify_all() 
             
             async with self.condition:
-                logger.debug("======== Cache write completed =======")
+                logger.debug(f"======== Cache write completed for range {self.cache_range_start}-{self.cache_range_end} in <{time.time() - before:.2f}> seconds =======")
                 self.completed = True
                 self.condition.notify_all()
-        now = time.time()
-        logger.debug(f"Cache write completed in {now - before:.2f} seconds")
         
     async def write(self, raw_url: str, req_fs_header: dict):
         """创建写入异步任务
@@ -115,8 +113,9 @@ class ChunksWriter():
             logger.debug("Write task already exists, skipping")
             return
             
-    async def read(self, start: int, end: Optional[int] = None) -> AsyncGenerator[bytes, None]:
-        """读取缓存文件
+    async def read(self, start: Optional[int] = None, end: Optional[int] = None) -> AsyncGenerator[bytes, None]:
+        """读取缓存文件，start 和 end 留空表示读取全部
+        
         如果cache data不为空，则直接返回
         否则从队列中读取数据，并将数据写入缓存文件
 
@@ -124,11 +123,15 @@ class ChunksWriter():
         2. 如果请求结束位置尚未缓存且缓存还未完成，则等待数据到达；
         3. 如果请求的结束位置超出目标缓存，则在缓存写入完成后返回实际可用数据。
 
-        :param start: int 请求开始字节
-        :param end: int 请求结尾字节，None表示最后
-        
-        :return 文件异步生成器
+        Args:
+            start (Optional[int]): 请求开始字节, 如果不传入则表示从头读取
+            end (Optional[int], optional): 请求结尾字节，None表示最后. Defaults to None.
+        Yields:
+            AsyncGenerator[bytes, None]: 文件异步生成器
         """
+        if start is None:
+            start = 0
+        
         # 当 end 为 None 时，设置为无限大
         if end is None:
             end = float("inf")

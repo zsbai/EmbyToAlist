@@ -84,7 +84,7 @@ class RangeInfo:
     """ 缓存的范围 """
     
     response_range: Optional[tuple[int, int]] = None
-    """ 响应的范围 """
+    """ 响应的范围, 会根据播放器类型和缓存状态进行调整 """
     
     # file_source_request_range: Optional[tuple[int, int]] = None
     # """ 文件源的请求范围(根据缓存状态变化) """

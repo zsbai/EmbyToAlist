@@ -4,7 +4,7 @@ from loguru import logger
 from ..config import CACHE_ENABLE, INITIAL_CACHE_SIZE_OF_TAIL, HIGH_COMPAT_MEDIA_CLIENTS, LOW_COMPAT_MEDIA_CLIENTS, RAW_LINK_PROVIDER
 from ..models import FileInfo, ItemInfo, RequestInfo, CacheRangeStatus, RangeInfo, response_headers_template
 from ..utils.path import transform_file_path, should_redirect_to_alist
-from ..utils.network import reverse_proxy, temporary_redirect
+from ..utils.network import stream_handler, temporary_redirect
 from ..utils.common import get_content_type, extract_api_key, ClientManager
 from ..service.manager import RawLinkManager
 from ..service.emby.items import get_item_info, get_file_info
@@ -97,11 +97,12 @@ async def redirect(item_id, filename, request: fastapi.Request):
     )
     
     ua_lower = (request.headers.get('User-Agent') or '').lower()
-    if any(player in ua_lower for player in LOW_COMPAT_MEDIA_CLIENTS):
+    if any(player in ua_lower for player in HIGH_COMPAT_MEDIA_CLIENTS):
+        request_info.is_HIGH_COMPAT_MEDIA_CLIENTS = True
+    else:
         request_info.is_LOW_COMPAT_MEDIA_CLIENTS = True
-        return await temporary_redirect(
-            raw_link_manager=raw_link_manager,
-        )
+        if any(player in ua_lower for player in LOW_COMPAT_MEDIA_CLIENTS):
+            logger.debug("Matched low compatibility client from configured list")
     
     cache_system = AppContext.get_cache_system()
     cache_exist = await cache_system.get_cache_status(request_info)
@@ -113,9 +114,7 @@ async def redirect(item_id, filename, request: fastapi.Request):
         request_info.range_info.cache_range = (0, cache_file_size)
         
         # check video player
-        # if 'mpv' in ua_lower:
-        if any(player in ua_lower for player in HIGH_COMPAT_MEDIA_CLIENTS):
-            request_info.is_HIGH_COMPAT_MEDIA_CLIENTS = True
+        if request_info.is_HIGH_COMPAT_MEDIA_CLIENTS:
             response_end = cache_file_size - 1
         else:
             response_end = file_info.size - 1
@@ -139,8 +138,8 @@ async def redirect(item_id, filename, request: fastapi.Request):
     elif file_info.size - start_byte < INITIAL_CACHE_SIZE_OF_TAIL:
         logger.debug("Match cache condition 2: Requesting file tail")
         request_info.cache_range_status = CacheRangeStatus.FULLY_CACHED_TAIL
-        # 默认初始缓存 1MB，之后根据请求头裁切
-        request_info.range_info.cache_range = (file_info.size - 1 - INITIAL_CACHE_SIZE_OF_TAIL, file_info.size - 1)
+        # 默认初始缓存 1MB，之后根据请求头裁切 (TODO)
+        request_info.range_info.cache_range = (start_byte, file_info.size - 1)
         if cache_exist:
                 resp_header = response_headers_template.copy()
                 resp_header['Content-Type'] = get_content_type(file_info.name)
@@ -177,14 +176,14 @@ async def redirect(item_id, filename, request: fastapi.Request):
         )
     
     if cache_exist:
-        return await reverse_proxy(
+        return await stream_handler(
             cache=await cache_system.get_cache_file(request_info),
             response_headers=response_headers,
             request_info=request_info,
         )
         
     else:
-        return await reverse_proxy(
+        return await stream_handler(
             cache=None,
             response_headers=response_headers,
             request_info=request_info,

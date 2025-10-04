@@ -40,6 +40,8 @@ class CacheSystem():
         """
         获取缓存文件的写入器, 如果缓存文件已经存在，则返回已存在的写入器
         
+        ChunkWriter 存活时间为 60 秒，超过时间则会被删除
+        
         Args:
             request_info (RequestInfo): 请求信息
             request_header (dict): 请求头
@@ -55,7 +57,7 @@ class CacheSystem():
             return task
         else:
             writer = ChunksWriter(request_info)
-            await self.task_manager.create_task(ChunksWriter, file_id, writer, sub_key, ttl=40)
+            await self.task_manager.create_task(ChunksWriter, file_id, writer, sub_key, ttl=60)
 
             return writer
     
@@ -132,15 +134,15 @@ class CacheSystem():
         self,
         request_info: RequestInfo,
         cache_next_episode_tag: bool = False
-    ):
+    ) -> ChunksWriter:
         """
-        开始写入缓存文件
+        开始向内存写入缓存文件，可以直接通过 ChunksWriter 中的read方法，读取缓存文件的任意部分
         
         Args:
             request_info (RequestInfo): 请求信息
             cache_next_episode_tag (bool): 当前缓存任务是否为剧集的下一集缓存任务,防止递归缓存
         Returns:
-            None
+            ChunksWriter: 缓存文件的写入器
         """
         writer: ChunksWriter = await self.get_writer(request_info)
         
@@ -180,12 +182,30 @@ class CacheSystem():
         if not cache_next_episode_tag:
             asyncio.create_task(
                 self.cache_next_episode(request_info)
-            )     
+            )
+        
+        return writer
         
     async def get_cache_file(
         self,
-        request_info: RequestInfo
+        request_info: RequestInfo,
+        start: Optional[int] = None,
+        end: Optional[int] = None
     ) -> AsyncGenerator[bytes, None]:
+        
+        """
+        获取缓存文件的内容, 会优先从内存中获取缓存文件，如果内存中没有，则从磁盘中获取
+        
+        不传入 start 和 end 时，返回range_info 中的 request_range 范围
+
+        Args:
+            request_info (RequestInfo): 请求信息
+            start (Optional[int]): 起始位置
+            end (Optional[int]): 结束位置
+
+        Returns:
+            AsyncGenerator[bytes, None]: 缓存文件的内容生成器
+        """
         
         # 检查内存缓存
         writer: Optional[ChunksWriter] = await self.task_manager.get_task(
@@ -193,13 +213,16 @@ class CacheSystem():
             request_info.file_info.id, 
             'tail' if request_info.cache_range_status == CacheRangeStatus.FULLY_CACHED_TAIL else 'head'
         )
-        rs, re = request_info.range_info.request_range
-        logger.debug(f"Getting cache file for {request_info.file_info.name} from {rs} to {re}")
+        if start is None and end is None:
+            start, end = request_info.range_info.request_range
+            
+        logger.debug(f"Getting cache file for {request_info.file_info.name} from {start} to {end}")
         if writer is not None:
             logger.debug(f"Cache file found in memory for {request_info.file_info.name}")
-            return writer.read(rs, re)
-        
+            return writer.read(start, end)
+
         # 检查磁盘缓存
+        # TODO: 目前磁盘的后端range仍然默认从range_info.request_range获取
         if await self.storage.is_cached(
             file_info=request_info.file_info,
             range_info=request_info.range_info
