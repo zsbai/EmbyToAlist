@@ -5,15 +5,14 @@ from loguru import logger
 from typing import Any, Optional
 
 from ....config import EMBY_SERVER
+from ....utils.common import ClientManager
 from .exceptions import EmbyHTTPError
 
 class EmbyClient:
     def __init__(
         self,
         base_url: str | None = None,
-        api_key: Optional[str] = None,
-        client: Optional[httpx.AsyncClient] = None,
-        timeout: float = 10.0,
+        api_key: Optional[str] = None
     ):
         """
         Emby API Client
@@ -22,20 +21,10 @@ class EmbyClient:
             base_url: Emby服务器的基础URL，例如 "http://localhost:8096"
             api_key: Emby API密钥
             client: 可选的httpx.AsyncClient实例，如果未提供则会创建一个新的
-            timeout: 请求超时时间，单位为秒
         """
         self.base_url = (base_url or EMBY_SERVER).rstrip("/")
         self.api_key = api_key
-        self._ext_client = client
-        self._own_client = client is None
-        if self._own_client:
-            self._client = httpx.AsyncClient(timeout=timeout, follow_redirects=False)
-        else:
-            self._client = client
-
-    async def aclose(self):
-        if self._own_client:
-            await self._client.aclose()
+        self._client = ClientManager.get_client()
 
     async def _retry(self, func, *, retries=2, retry_for=(httpx.TransportError,), backoff_base=0.3):
         last_exc = None

@@ -75,11 +75,8 @@ async def get_emby_raw_url(file_path: str, user_id: str | None = None, max_retri
     Returns:
         直链 URL（绝对地址，包含 api_key）
     """
-    if not RAW_LINK_EMBY_SERVER or not RAW_LINK_EMBY_KEY:
-        logger.error("RAW_LINK_EMBY_SERVER/RAW_LINK_EMBY_KEY 未配置")
-        raise HTTPException(status_code=500, detail="Emby RawLink 配置缺失")
 
-    client = EmbyClient(base_url=RAW_LINK_EMBY_SERVER, api_key=RAW_LINK_EMBY_KEY, client=ClientManager.get_client())
+    client = EmbyClient(base_url=RAW_LINK_EMBY_SERVER, api_key=RAW_LINK_EMBY_KEY)
 
     # 推断文件扩展名（用于 MediaSource 选择）
     file_ext = None

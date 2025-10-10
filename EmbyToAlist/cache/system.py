@@ -1,16 +1,19 @@
 import asyncio
 import copy
 from pathlib import Path
+from copy import deepcopy
 
 from loguru import logger
 
 from ..config import INITIAL_CACHE_SIZE_OF_TAIL, MEMORY_CACHE_ONLY
-from ..models import FileInfo, RequestInfo, CacheRangeStatus
+from ..models import FileInfo, RequestInfo, CacheRangeStatus, ItemInfo
 from .manager import AppContext
 from ..utils.common import ClientManager
+from ..utils.path import transform_file_path
 from ..cache.writer import ChunksWriter
 from ..cache.storage.file_storage import FileStorage
-from ..providers.media_server.emby.items import get_next_episode_item_info
+from ..providers.media_server.emby.items import get_next_episode_item_info, get_file_info
+from ..providers.media_server.emby.client import EmbyClient
 from ..providers.manager import RawLinkManager
 from typing import AsyncGenerator, Optional, TYPE_CHECKING
 if TYPE_CHECKING:
@@ -180,9 +183,11 @@ class CacheSystem():
                 )
                 
         if not cache_next_episode_tag:
-            asyncio.create_task(
-                self.cache_next_episode(request_info)
-            )
+            # 只在请求开头时尝试缓存下一集
+            if request_info.cache_range_status != CacheRangeStatus.FULLY_CACHED_TAIL:
+                asyncio.create_task(
+                    self.cache_next_episode(request_info)
+                )
         
         return writer
         
@@ -268,33 +273,45 @@ class CacheSystem():
             
         """
         previous_item_info = request_info.item_info
-        
-        next_item_info = await get_next_episode_item_info(previous_item_info, request_info.api_key)
+        logger.warning(f"API Key in cache_next_episode: {request_info.api_key}")
+        next_item_info: ItemInfo = await get_next_episode_item_info(
+            previous_item_info, 
+            EmbyClient(api_key=request_info.api_key)
+        )
         if next_item_info is None:
             logger.debug(f"No next episode found for {previous_item_info.item_id}")
             return
         
-        logger.debug(f"Next episode found: {next_item_info.item_id}")
-        
-        next_raw_link_manager = RawLinkManager(
-            path=next_item_info.file_info.path,
-            is_strm=next_item_info.file_info.is_strm,
-            user_agent=request_info.user_agent or 'EmbyToAlist',
+        file_infos: list[FileInfo] = await get_file_info(
+            EmbyClient(api_key=request_info.api_key),
+            next_item_info.item_id,
+            media_source_id=None
         )
         
-        next_request_info = RequestInfo(
-            file_info=next_item_info.file_info,
-            range_info=next_item_info.range_info,
-            raw_link_manager=next_raw_link_manager,
-            item_info=next_item_info,
-            api_key=request_info.api_key,
-            cache_range_status=CacheRangeStatus.PARTIALLY_CACHED
-        )
+        logger.info(f"Next episode found: {next_item_info.item_id}")
         
-        # 检查是否已经缓存
-        if await self.get_cache_status(next_request_info):
-            logger.debug(f"Next episode {next_item_info.item_id} is already cached.")
-            return
+        for file_info in file_infos:
+            
+            file_info.path = transform_file_path(file_info.path)
         
-        # 开始缓存下一集
-        await self.start_write_cache_file(next_request_info, cache_next_episode_tag=True)
+            next_raw_link_manager = RawLinkManager(
+                path=file_info.path,
+                is_strm=file_info.is_strm,
+                ua=request_info.user_agent or 'EmbyToAlist',
+            )
+            
+            await next_raw_link_manager.create_task()
+            
+            next_request_info = deepcopy(request_info)
+            next_request_info.file_info = file_info
+            next_request_info.item_info = next_item_info
+            next_request_info.raw_link_manager = next_raw_link_manager
+            
+            # 检查是否已经缓存
+            if await self.get_cache_status(next_request_info):
+                logger.debug(f"Next episode {next_item_info.item_id} is already cached.")
+                return
+            
+            # 开始缓存
+            await self.start_write_cache_file(next_request_info, cache_next_episode_tag=True)
+            logger.info(f"Started caching next episode {next_item_info.item_id}: {file_info.name}")

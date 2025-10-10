@@ -56,7 +56,7 @@ async def get_next_episode_item_info(
 
     Args:
         previous_item_info (ItemInfo): 当前集的Item信息
-        api_key (str): Emby API Key
+        client (EmbyClient): Emby API客户端实例
 
     Returns:
         ItemInfo: 包含Item信息的dataclass
@@ -85,6 +85,8 @@ async def get_next_episode_item_info(
 async def get_file_info(client: EmbyClient, item_id: str, media_source_id: Optional[str] = None) -> FileInfo | list[FileInfo]:
     """
     从Emby 的 PlaybackInfo 获取文件播放信息
+    
+    Important: 返回的path为系统文件路径，未经转换
     
     Args:
         item_id (str): Emby Item ID

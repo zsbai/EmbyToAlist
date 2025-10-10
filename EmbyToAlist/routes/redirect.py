@@ -31,7 +31,7 @@ async def redirect(item_id, filename, request: fastapi.Request):
     if not media_source_id:
         raise fastapi.HTTPException(status_code=400, detail="MediaSourceId is required")
     
-    emby_client = EmbyClient(api_key=api_key, client=ClientManager.get_client())
+    emby_client = EmbyClient(api_key=api_key)
 
     file_info: FileInfo = await get_file_info(emby_client, item_id, media_source_id)
     item_info: ItemInfo = await get_item_info(emby_client, item_id, user_id)
@@ -92,6 +92,7 @@ async def redirect(item_id, filename, request: fastapi.Request):
         item_info=item_info,
         raw_link_manager=raw_link_manager,
         cache_range_status=None,
+        api_key=api_key,
         range_info=range_info,
         user_agent=request.headers.get('User-Agent'),
     )

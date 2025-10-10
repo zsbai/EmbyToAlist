@@ -6,7 +6,6 @@ import httpx
 from loguru import logger
 import fastapi
 
-from ..providers.media_server.emby.client import EmbyClient
 from typing import Optional, TYPE_CHECKING
 if TYPE_CHECKING:
     pass
@@ -54,14 +53,6 @@ class ClientManager():
     async def close_client(cls):
         if cls._client is not None:
             await cls._client.aclose()
-
-    @classmethod
-    def get_emby_client(cls, api_key: str) -> 'EmbyClient':
-        """Return a per-request EmbyClient bound to api_key, sharing the httpx client."""
-        if cls._client is None:
-            cls.init_client()
-        return EmbyClient(api_key=api_key, client=cls._client)
-
 
 def get_content_type(container) -> str:
     """文件格式对应的Content-Type映射"""
