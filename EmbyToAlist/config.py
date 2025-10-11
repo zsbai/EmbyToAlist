@@ -25,7 +25,7 @@ CACHE_NEXT_EPISODE = env.bool("CACHE_NEXT_EPISODE", default=False)
 CACHE_PATH = env.str("CACHE_PATH", default="./cache")
 FORCE_CLIENT_RECONNECT = env.bool("FORCE_CLIENT_RECONNECT", default=False)
 
-LOG_LEVEL = env.str("LOG_LEVEL", default="info").lower()
+LOG_LEVEL = env.str("LOG_LEVEL", default="info").upper()
 
 # ADVANCED CONFIGURATION 高级配置
 INITIAL_CACHE_SIZE_OF_TAIL = env.int("INITIAL_CACHE_SIZE_OF_TAIL", default=1*1024*1024)

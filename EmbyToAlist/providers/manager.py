@@ -19,12 +19,13 @@ class RawLinkManager():
     """
     cache = Cache(Cache.MEMORY)
 
-    def __init__(self,
-                 path: str,
-                 is_strm: bool,
-                 ua: str = None,
-                 enable_ua_passthrough: bool = ENABLE_UA_PASSTHROUGH
-                 ):
+    def __init__(
+        self,
+        path: str,
+        is_strm: bool,
+        ua: str = None,
+        enable_ua_passthrough: bool = ENABLE_UA_PASSTHROUGH
+    ):
         if enable_ua_passthrough and ua is None:
             raise fastapi.HTTPException(status_code=500, detail="User-Agent passthrough is enabled, but User-Agent is None")
 

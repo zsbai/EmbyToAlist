@@ -67,7 +67,13 @@ class ChunksWriter():
         logger.debug(f"Header of File Source Request: {self.request_header}")
 
         before = time.time()
-        async with self.client.stream("GET", raw_url, headers=self.request_header) as response:
+        async with self.client.stream(
+            "GET",
+            raw_url,
+            headers=self.request_header,
+            timeout=httpx.Timeout(read=30)
+        ) as response:
+            
             if response.status_code != 206:
                 raise ValueError(f"Expected 206 response, got {response.status_code}")
             

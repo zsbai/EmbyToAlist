@@ -273,7 +273,6 @@ class CacheSystem():
             
         """
         previous_item_info = request_info.item_info
-        logger.warning(f"API Key in cache_next_episode: {request_info.api_key}")
         next_item_info: ItemInfo = await get_next_episode_item_info(
             previous_item_info, 
             EmbyClient(api_key=request_info.api_key)

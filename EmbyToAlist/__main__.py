@@ -7,11 +7,13 @@ from .config import LOG_LEVEL, CACHE_ENABLE, CACHE_PATH
 from .routes import redirect, playback
 from .utils.common import ClientManager
 from .cache.manager import AppContext
+from .logging import setup_logging
 
 # 使用上下文管理器，创建异步请求客户端
 @asynccontextmanager
 async def lifespan(app: fastapi.FastAPI):
     ClientManager.init_client()
+    setup_logging()
     if CACHE_ENABLE:
         AppContext.init(CACHE_PATH)
         # 启动缓存清理调度器
@@ -28,4 +30,9 @@ app.include_router(redirect.router)
 app.include_router(playback.router)
 
 if __name__ == "__main__":
-    uvicorn.run(app, port=60001, host='0.0.0.0', log_level=LOG_LEVEL)
+    uvicorn.run(
+        app,
+        port=60001, 
+        host='0.0.0.0', 
+        log_level=None
+    )
