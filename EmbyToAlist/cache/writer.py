@@ -26,6 +26,7 @@ class ChunksWriter():
                 
         self.condition = asyncio.Condition()
         self.completed: bool = False
+        self.error: Optional[Exception] = None
         
         # initialize cache data
         self.cache_range_end: int = request_info.range_info.cache_range[1]
@@ -67,44 +68,51 @@ class ChunksWriter():
         logger.debug(f"Header of File Source Request: {self.request_header}")
 
         before = time.time()
-        async with self.client.stream(
-            "GET",
-            raw_url,
-            headers=self.request_header,
-            timeout=httpx.Timeout(read=30)
-        ) as response:
-            
-            if response.status_code != 206:
-                raise ValueError(f"Expected 206 response, got {response.status_code}")
-            
-            # 提取文件头信息
-            logger.debug(f"File Source Response Headers: {response.headers}")
-            etag = response.headers.get('ETag')
-            last_modified = response.headers.get('Last-Modified')
-            content_disposition = response.headers.get('Content-Disposition')
-            
-            # 只有当至少有一个头信息存在时才创建FileHeaders对象
-            if etag or last_modified or content_disposition:
-                self.file_headers = FileHeaders(
-                    etag=etag,
-                    last_modified=last_modified,
-                    content_disposition=content_disposition
-                )
-                logger.debug(f"Extracted headers: ETag={self.file_headers.etag}, Last-Modified={self.file_headers.last_modified}")
-            else:
-                self.file_headers = None
-                logger.debug("No headers found in response")
-            
-            logger.debug(f"======== Cache write started for range {self.cache_range_start}-{self.cache_range_end} =======")
-            
-            async for chunk in response.aiter_bytes(chunk_size):
-                # 写入缓存文件
+        try:
+            async with self.client.stream(
+                "GET",
+                raw_url,
+                headers=self.request_header,
+                timeout=httpx.Timeout(30)
+            ) as response:
+                
+                if response.status_code != 206:
+                    raise ValueError(f"Expected 206 response, got {response.status_code}")
+                
+                # 提取文件头信息
+                logger.debug(f"File Source Response Headers: {response.headers}")
+                etag = response.headers.get('ETag')
+                last_modified = response.headers.get('Last-Modified')
+                content_disposition = response.headers.get('Content-Disposition')
+                
+                # 只有当至少有一个头信息存在时才创建FileHeaders对象
+                if etag or last_modified or content_disposition:
+                    self.file_headers = FileHeaders(
+                        etag=etag,
+                        last_modified=last_modified,
+                        content_disposition=content_disposition
+                    )
+                    logger.debug(f"Extracted headers: ETag={self.file_headers.etag}, Last-Modified={self.file_headers.last_modified}")
+                else:
+                    self.file_headers = None
+                    logger.debug("No headers found in response")
+                
+                logger.debug(f"======== Cache write started for range {self.cache_range_start}-{self.cache_range_end} =======")
+                
+                async for chunk in response.aiter_bytes(chunk_size):
+                    # 写入缓存文件
+                    async with self.condition:
+                        self.cache_data.extend(chunk)
+                        self.condition.notify_all() 
+                
                 async with self.condition:
-                    self.cache_data.extend(chunk)
-                    self.condition.notify_all() 
-            
+                    logger.debug(f"======== Cache write completed for range {self.cache_range_start}-{self.cache_range_end} in <{time.time() - before:.2f}> seconds =======")
+                    self.completed = True
+                    self.condition.notify_all()
+        except Exception as e:
+            logger.error(f"Error occurred during chunk writing: {repr(e)}")
             async with self.condition:
-                logger.debug(f"======== Cache write completed for range {self.cache_range_start}-{self.cache_range_end} in <{time.time() - before:.2f}> seconds =======")
+                self.error = e
                 self.completed = True
                 self.condition.notify_all()
         
@@ -167,6 +175,10 @@ class ChunksWriter():
         while current_index < end:
             async with self.condition:
                 await self.condition.wait_for(lambda: len(self.cache_data) > current_index or self.completed)
+                
+                if self.error is not None:
+                    raise IOError(f"Error occurred during cache writing: {repr(self.error)}")
+                
                 new_end = min(end, len(self.cache_data))
                 
             if new_end > current_index:

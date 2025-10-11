@@ -56,12 +56,12 @@ async def get_alist_raw_url(file_path: str, ua: str, max_retries: int = 5, retry
                 raise HTTPException(status_code=500, detail=f"Alist Server Error: {resp.get('message')}")
 
         except (ReadTimeout, RequestError) as e:
-            logger.warning(f"[{attempt}/{max_retries}] Request failed: {e}")
+            logger.warning(f"[{attempt}/{max_retries}] Request failed: {repr(e)}")
             if attempt == max_retries:
                 raise HTTPException(status_code=500, detail="Alist Server Timeout")
             await asyncio.sleep(retry_delay)
         except Exception as e:
-            logger.error(f"Unexpected error during Alist request: {e}")
+            logger.error(f"Unexpected error during Alist request: {repr(e)}")
             raise HTTPException(status_code=500, detail="Alist Server Error")
     
 async def warm_up_remote_fs(file_dir: str, max_retries: int = 3, retry_delay: float = 0.5) -> None:

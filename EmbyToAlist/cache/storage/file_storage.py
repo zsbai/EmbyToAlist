@@ -251,22 +251,32 @@ class FileStorage:
         
         fname = f"cache_file_{start}_{end}"
         temp_path = cache_dir / f"{fname}.tmp"
-        
-        async with self._get_cache_lock(cache_dir):
-            if await self._is_already_fully_cached(cache_dir, start, end):
-                logger.debug(f"Cache file already exists for range {start}-{end}, skipping write")
-                return
-            
-            await self._cleanup_overlap_files(cache_dir, start, end)
-            
-            async with aiofiles.open(temp_path, 'wb') as f:
-                async for chunk in writer.read(start, end):
-                    await f.write(chunk)
-            
-            final_path = cache_dir / fname
-            await aiofiles.os.rename(temp_path, final_path)
-            logger.info(f"Cache file written: {final_path}")
-            await self._update_cache_stats(final_path, file_headers, item_info)
+        try:
+            async with self._get_cache_lock(cache_dir):
+                if await self._is_already_fully_cached(cache_dir, start, end):
+                    logger.debug(f"Cache file already exists for range {start}-{end}, skipping write")
+                    return
+                
+                await self._cleanup_overlap_files(cache_dir, start, end)
+                
+                async with aiofiles.open(temp_path, 'wb') as f:
+                    async for chunk in writer.read(start, end):
+                        await f.write(chunk)
+                
+                final_path = cache_dir / fname
+                await aiofiles.os.rename(temp_path, final_path)
+                logger.info(f"Cache file written: {final_path}")
+                await self._update_cache_stats(final_path, file_headers, item_info)
+                
+        # 处理writer.read中抛出的异常
+        except IOError as e:
+            logger.error(f"IOError during cache write: {e}")
+            if await aiofiles.os.path.exists(temp_path):
+                await aiofiles.os.remove(temp_path)
+        except Exception as e:
+            logger.error(f"Unexpected error during cache write: {e}")
+            if await aiofiles.os.path.exists(temp_path):
+                await aiofiles.os.remove(temp_path)
         
     async def _update_cache_stats(self, file_path: Path, file_headers: Optional[FileHeaders] = None, 
                                  item_info: Optional['ItemInfo'] = None):
