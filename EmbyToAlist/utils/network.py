@@ -85,7 +85,7 @@ async def stream_handler(
 
             reverse_start = response_start + bytes_sent
             reverse_end = response_end
-            logger.debug(f"Falling back to reverse proxy from {reverse_start} to {reverse_end}")
+            logger.info(f"Falling back to reverse proxy from {reverse_start} to {reverse_end}")
 
             async for chunk in reverse_proxy(request_info, reverse_start, reverse_end):
                 if not chunk:
@@ -144,7 +144,7 @@ async def reverse_proxy(
     client = ClientManager.get_client()
 
     try:
-        async with client.stream("GET", raw_url, headers=headers) as response:
+        async with client.stream("GET", raw_url, headers=headers, timeout=httpx.Timeout(10)) as response:
             if response.status_code not in {200, 206}:
                 logger.error(f"Reverse proxy unexpected status: {response.status_code}")
                 response.raise_for_status()
@@ -156,16 +156,18 @@ async def reverse_proxy(
         logger.warning("Reverse proxy stream cancelled by client")
         raise
     except Exception as e:
-        logger.error(f"Reverse proxy request failed: {e}")
+        logger.error(f"Reverse proxy request failed: {repr(e)}")
         raise fastapi.HTTPException(status_code=502, detail="Reverse Proxy Failed")
 
 
 async def temporary_redirect(raw_link_manager: 'RawLinkManager') -> fastapi.Response:
-    """重定向到alist直链
+    """
+    响应307重定向到alist直链
     
-    :param raw_link_manager: RawLinkManager实例
-    
-    :return fastapi.Response: 重定向到alist直链的响应
+    Args:
+        raw_link_manager (RawLinkManager): alist直链管理器实例
+    Returns:
+        fastapi.Response: 重定向响应
     """
     raw_url = await raw_link_manager.get_raw_url()
     return fastapi.responses.RedirectResponse(url=raw_url, status_code=307)

@@ -190,14 +190,14 @@ class FileStorage:
         rs, re = range_info.request_range
         
         if not cache_dir.exists():
-            logger.debug(f"Cache directory does not exist: {cache_dir}")
+            logger.warning(f"Cache directory does not exist: {cache_dir}")
             return False
         
         for f in cache_dir.iterdir():
             if f.is_file() and not f.name.endswith(".tmp"):
                 s, e = map(int, f.stem.split("_")[2:4])
                 if s <= rs <= e:
-                    logger.debug(f"Cache file found: {f}")
+                    logger.info(f"Cache file found: {f}")
                     # 更新最后读取时间
                     self.db.set_table('cache_files')
                     self.db.update(
@@ -205,8 +205,8 @@ class FileStorage:
                         condition=lambda q: q.path == str(cache_dir)
                     )
                     return f, s
-                
-        logger.debug(f"No valid cache file found for {file_info.path}")
+
+        logger.warning(f"No valid cache file found for {file_info.path}")
         return None
         
     async def write_to_disk(

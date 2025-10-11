@@ -28,7 +28,7 @@ FORCE_CLIENT_RECONNECT = env.bool("FORCE_CLIENT_RECONNECT", default=False)
 LOG_LEVEL = env.str("LOG_LEVEL", default="info").upper()
 
 # ADVANCED CONFIGURATION 高级配置
-INITIAL_CACHE_SIZE_OF_TAIL = env.int("INITIAL_CACHE_SIZE_OF_TAIL", default=1*1024*1024)
+INITIAL_CACHE_SIZE_OF_TAIL = env.int("INITIAL_CACHE_SIZE_OF_TAIL", default=3*1024*1024)
 """初始末尾缓存大小，会经过裁切，需要保证请求Range在文件末尾的Cache Size内"""
 
 CHUNK_SIZE_OF_CHUNKSWITER = env.int("CHUNK_SIZE_OF_CHUNKSWITER", default=200*1024)

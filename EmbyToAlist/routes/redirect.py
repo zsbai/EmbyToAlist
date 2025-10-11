@@ -60,7 +60,7 @@ async def redirect(item_id, filename, request: fastapi.Request):
 
     range_header = request.headers.get('Range')
     if not range_header:
-        logger.debug("Range header not found")
+        logger.warning("Range header not found")
         logger.debug(f"Request Headers: {request.headers}")
         
         return await temporary_redirect(
@@ -155,6 +155,7 @@ async def redirect(item_id, filename, request: fastapi.Request):
         response_end = file_info.size - 1
         
     else:
+        logger.debug("Not match any cache condition")
         request_info.cache_range_status = CacheRangeStatus.NOT_CACHED
         return await temporary_redirect(
             raw_link_manager=raw_link_manager,

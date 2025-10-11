@@ -2,6 +2,7 @@ import sys
 
 import logging
 from loguru import logger
+from uvicorn.logging import AccessFormatter
 
 from .config import LOG_LEVEL
 
@@ -19,17 +20,28 @@ class InterceptHandler(logging.Handler):
             frame = frame.f_back
             depth += 1
 
-        logger.opt(depth=depth, exception=record.exc_info).log(
+        logger.opt(depth=depth, exception=record.exc_info).bind(
+            logger_name=record.name
+        ).log(
             level, record.getMessage()
         )
         
 def setup_logging():
     logger.remove()
+    
     logger.add(
         sys.stderr,
         format="<green>{time:YYYY-MM-DD HH:mm:ss,SSSZZ}</green> - "
         "<level>{level: <8}</level> - "
         "<cyan>{name}</cyan>:<cyan>{line}</cyan> - "
         "{message}",
-        level=LOG_LEVEL,
+        level=LOG_LEVEL
     )
+    
+    access_logger = logging.getLogger("uvicorn.access")
+    for handler in access_logger.handlers:
+        handler.setFormatter(AccessFormatter(
+            fmt="%(asctime)s | %(levelprefix)s %(client_addr)s - \"%(request_line)s\" %(status_code)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+            use_colors=True
+        ))
