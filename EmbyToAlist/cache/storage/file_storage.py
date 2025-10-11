@@ -206,7 +206,8 @@ class FileStorage:
                     )
                     return f, s
 
-        logger.warning(f"No valid cache file found for {file_info.path}")
+        # 对于视频中间恢复播放的请求，找不到缓存为正常情况
+        logger.debug(f"No valid cache file found for {file_info.path}")
         return None
         
     async def write_to_disk(
@@ -224,16 +225,13 @@ class FileStorage:
             file_info (FileInfo): 文件信息
             range_info (RangeInfo): 范围信息
         """
-        # await asyncio.sleep(20)  # 延迟写入，防止阻塞
-        
-        # check writer is complete or not every 20 seconds
-        for _ in range(3):
-            if writer.completed:
-                break
-            await asyncio.sleep(20)
-        
-        # 确保writer已经完成，然后获取头信息
+        await asyncio.sleep(60)
         if not writer.completed:
+            for _ in range(3):
+                if writer.completed:
+                    break
+                await asyncio.sleep(10)
+            # 如果等待3次仍未完成，则继续
             logger.warning("Writer not completed after waiting, proceeding anyway")
         
         # 从writer中获取头信息

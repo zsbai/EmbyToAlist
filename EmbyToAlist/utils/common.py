@@ -40,7 +40,12 @@ class ClientManager():
     @classmethod
     def init_client(cls):
         if cls._client is None:
-            cls._client = httpx.AsyncClient()
+            cls._client = httpx.AsyncClient(
+                http2=True,
+                limits=httpx.Limits(
+                    keepalive_expiry=30
+                )
+            )
 
     @classmethod
     def get_client(cls):

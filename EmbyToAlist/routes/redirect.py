@@ -1,7 +1,7 @@
 import fastapi
 from loguru import logger
 
-from ..config import CACHE_ENABLE, INITIAL_CACHE_SIZE_OF_TAIL, HIGH_COMPAT_MEDIA_CLIENTS, LOW_COMPAT_MEDIA_CLIENTS, RAW_LINK_PROVIDER
+from ..config import CACHE_ENABLE, INITIAL_CACHE_SIZE_OF_TAIL, HIGH_COMPAT_MEDIA_CLIENTS, RAW_LINK_PROVIDER
 from ..models import FileInfo, ItemInfo, RequestInfo, CacheRangeStatus, RangeInfo, response_headers_template
 from ..utils.path import transform_file_path, should_redirect_to_alist
 from ..utils.network import stream_handler, temporary_redirect
@@ -100,10 +100,6 @@ async def redirect(item_id, filename, request: fastapi.Request):
     ua_lower = (request.headers.get('User-Agent') or '').lower()
     if any(player in ua_lower for player in HIGH_COMPAT_MEDIA_CLIENTS):
         request_info.is_HIGH_COMPAT_MEDIA_CLIENTS = True
-    else:
-        request_info.is_LOW_COMPAT_MEDIA_CLIENTS = True
-        if any(player in ua_lower for player in LOW_COMPAT_MEDIA_CLIENTS):
-            logger.debug("Matched low compatibility client from configured list")
     
     cache_system = AppContext.get_cache_system()
     cache_exist = await cache_system.get_cache_status(request_info)
@@ -121,8 +117,10 @@ async def redirect(item_id, filename, request: fastapi.Request):
             response_end = file_info.size - 1
             
         if end_byte is None or end_byte > cache_file_size:
+            # 后续进行缓存拼接
             request_info.cache_range_status = CacheRangeStatus.PARTIALLY_CACHED
         else:
+            # 完全在缓存范围内，直接响应缓存文件
             request_info.cache_range_status = CacheRangeStatus.FULLY_CACHED
             
             if cache_exist:

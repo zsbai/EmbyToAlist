@@ -47,13 +47,8 @@ async def stream_handler(
     async def merged_stream() -> AsyncGenerator[bytes, None]:
 
         try:
-            cache_stream: Optional[AsyncGenerator[bytes, None]] = cache
-            # 如果缓存不存在，但是需要缓存，则启动缓存写入
-            if cache_stream is None and request_info.cache_range_status != CacheRangeStatus.NOT_CACHED:
-                logger.debug("Cache is None, start writing cache")
-                await cache_system.start_write_cache_file(request_info)
-                cache_stream = await cache_system.get_cache_file(request_info)
-
+            _cache_stream: Optional[AsyncGenerator[bytes, None]] = None
+            
             response_range = request_info.range_info.response_range
             if response_range is None:
                 raise fastapi.HTTPException(status_code=500, detail="Response range is not set")
@@ -61,15 +56,23 @@ async def stream_handler(
             response_start, response_end = response_range
             expected_total = response_end - response_start + 1
             bytes_sent = 0
+            
+            # 如果缓存不存在，但是需要缓存，则启动缓存写入
+            if cache is None and request_info.cache_range_status != CacheRangeStatus.NOT_CACHED:
+                logger.debug("Cache is None, start writing cache")
+                await cache_system.start_write_cache_file(request_info)
+                _cache_stream = await cache_system.get_cache_file(request_info)
 
-            if cache_stream is not None:
+            if cache is not None:
+                _cache_stream = cache     
                 logger.debug("Streaming from cache")
-                async for chunk in cache_stream:
-                    if not chunk:
-                        continue
-                    yield chunk
-                    bytes_sent += len(chunk)
-                logger.debug(f"Cache streaming finished, bytes sent: {bytes_sent}")
+                
+            async for chunk in _cache_stream:
+                if not chunk:
+                    continue
+                yield chunk
+                bytes_sent += len(chunk)
+            logger.debug(f"Cache streaming finished, bytes sent: {bytes_sent}")
 
             remaining_total = expected_total - bytes_sent
 
@@ -77,6 +80,7 @@ async def stream_handler(
             if remaining_total <= 0:
                 return
 
+            logger.debug(f"Media client is high compatibility: {request_info.is_HIGH_COMPAT_MEDIA_CLIENTS}")
             if request_info.is_HIGH_COMPAT_MEDIA_CLIENTS:
                 logger.debug("High compatibility client finished cache segment, ending stream")
                 if remaining_total > 0:

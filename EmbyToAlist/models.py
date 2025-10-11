@@ -100,8 +100,6 @@ class RequestInfo:
     user_agent: Optional[str] = None
     is_HIGH_COMPAT_MEDIA_CLIENTS: bool = False
     """ 是否为对 Range 请求支持较好的播放器 """
-    is_LOW_COMPAT_MEDIA_CLIENTS: bool = False
-    """ 是否为对 Range 请求支持较差的播放器 """
 
     def __deepcopy__(self, memo):
         copied = RequestInfo(
@@ -111,8 +109,7 @@ class RequestInfo:
             cache_range_status=self.cache_range_status,
             api_key=self.api_key,
             raw_link_manager=self.raw_link_manager,  # 👈 关键跳过点
-            is_HIGH_COMPAT_MEDIA_CLIENTS=self.is_HIGH_COMPAT_MEDIA_CLIENTS,
-            is_LOW_COMPAT_MEDIA_CLIENTS=self.is_LOW_COMPAT_MEDIA_CLIENTS
+            is_HIGH_COMPAT_MEDIA_CLIENTS=self.is_HIGH_COMPAT_MEDIA_CLIENTS
         )
         memo[id(self)] = copied
         return copied
