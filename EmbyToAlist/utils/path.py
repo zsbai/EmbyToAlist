@@ -3,8 +3,8 @@ import os
 
 from loguru import logger
 
-from ..config import MOUNT_PATH_PREFIX_REMOVE, MOUNT_PATH_PREFIX_ADD, IGNORE_PATH
-from ..models import FileInfo
+from ..config import MOUNT_PATH_PREFIX_REMOVE, MOUNT_PATH_PREFIX_ADD, IGNORE_PATH, RAW_LINK_PROVIDER
+from ..models import FileInfo, PathCheckResult
 from typing import Tuple
 
 def get_hash_subdirectory_from_path(file_info: FileInfo, media_type) -> Tuple[str, str]:
@@ -78,3 +78,19 @@ def transform_file_path(file_path, mount_path_prefix_remove=MOUNT_PATH_PREFIX_RE
             
     logger.debug(f"Processed File Path: {file_path}")
     return file_path
+
+def check_file_path(file_info: FileInfo) -> PathCheckResult:
+    """
+    检查文件格式信息，并转换为Alist路径格式
+    
+    Args:
+        file_info (FileInfo): 文件信息对象，包含路径、名称、大小等属性
+    Returns:
+        PathCheckResult: 包含路径检查结果和转换后的文件信息对象
+    """
+    # transform path only when using alist provider
+    if not file_info.is_strm and (RAW_LINK_PROVIDER or '').lower() == 'alist':
+        if not should_redirect_to_alist(file_info.path):
+            return PathCheckResult(valid=False)
+        file_info.path = transform_file_path(file_info.path)
+    return PathCheckResult(valid=True, transformed_file_info=file_info)

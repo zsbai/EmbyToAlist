@@ -3,7 +3,7 @@ from loguru import logger
 
 from ..config import CACHE_ENABLE, INITIAL_CACHE_SIZE_OF_TAIL, HIGH_COMPAT_MEDIA_CLIENTS, RAW_LINK_PROVIDER
 from ..models import FileInfo, ItemInfo, RequestInfo, CacheRangeStatus, RangeInfo, response_headers_template
-from ..utils.path import transform_file_path, should_redirect_to_alist
+from ..utils.path import check_file_path
 from ..utils.network import stream_handler, temporary_redirect
 from ..utils.common import get_content_type, extract_api_key, ClientManager
 from ..providers.manager import RawLinkManager
@@ -39,16 +39,16 @@ async def redirect(item_id, filename, request: fastapi.Request):
     logger.info(f"Requested Item ID: {item_id}")
     logger.info("MediaFile Mount Path: " + file_info.path)
     logger.debug("Request Headers: " + str(request.headers))        
-    
-    # transform path only when using alist provider
-    if not file_info.is_strm and (RAW_LINK_PROVIDER or '').lower() == 'alist':
-        # if checkFilePath return False：return Emby originalUrl
-        if not should_redirect_to_alist(file_info.path):
-            redirected_url = f"{request.base_url}preventRedirect{request.url.path}{'?' + request.url.query if request.url.query else ''}"
-            logger.info("Redirected Url: " + redirected_url)
-            return fastapi.responses.RedirectResponse(url=redirected_url, status_code=307)
-        file_info.path = transform_file_path(file_info.path)
-    
+
+    result = check_file_path(file_info)
+    if not result.valid:
+        redirected_url = f"{request.base_url}preventRedirect{request.url.path}{'?' + request.url.query if request.url.query else ''}"
+        logger.info("Redirected Url: " + redirected_url)
+        return fastapi.responses.RedirectResponse(url=redirected_url, status_code=307)
+    else:
+        file_info = result.transformed_file_info
+
+
     # 如果满足alist直链条件，提前通过异步缓存alist直链
     raw_link_manager = RawLinkManager(file_info.path, is_strm=file_info.is_strm, ua=request.headers.get('user-agent'))
     await raw_link_manager.create_task()

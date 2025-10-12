@@ -2,7 +2,7 @@ import copy
 from dataclasses import dataclass
 from enum import StrEnum
 
-from typing import Optional, TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING, NamedTuple
 
 if TYPE_CHECKING:
     from .providers.manager import RawLinkManager
@@ -119,3 +119,7 @@ response_headers_template = {
     'Accept-Ranges': 'bytes',
     'Cache-Control': 'private, no-transform, no-cache'
 }
+
+class PathCheckResult(NamedTuple):
+    valid: bool
+    transformed_file_info: Optional[FileInfo] = None

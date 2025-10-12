@@ -9,7 +9,7 @@ from ..config import INITIAL_CACHE_SIZE_OF_TAIL, MEMORY_CACHE_ONLY
 from ..models import FileInfo, RequestInfo, CacheRangeStatus, ItemInfo
 from .manager import AppContext
 from ..utils.common import ClientManager
-from ..utils.path import transform_file_path
+from ..utils.path import check_file_path
 from ..cache.writer import ChunksWriter
 from ..cache.storage.file_storage import FileStorage
 from ..providers.media_server.emby.items import get_next_episode_item_info, get_file_info
@@ -294,8 +294,13 @@ class CacheSystem():
         
         for file_info in file_infos:
             
-            file_info.path = transform_file_path(file_info.path)
-        
+            result = check_file_path(file_info)
+            if not result.valid:
+                logger.debug(f"Next episode {next_item_info.item_id} path {file_info.path} is not valid for Alist, skipping")
+                continue
+            else:
+                file_info = result.transformed_file_info
+
             next_raw_link_manager = RawLinkManager(
                 path=file_info.path,
                 is_strm=file_info.is_strm,

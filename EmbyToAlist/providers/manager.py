@@ -35,7 +35,7 @@ class RawLinkManager():
         else:
             self.ua = ua
 
-        self.path = path
+        self.path = path.strip()
         self.is_strm = is_strm
         self.client = ClientManager.get_client()
         self.raw_url = None
@@ -70,7 +70,10 @@ class RawLinkManager():
             raw_url = await self.cache_raw_url()
             await self.cache.set(self.key, raw_url, ttl=3600)
             self.raw_url = raw_url
-            return raw_url
+            return 
+        except Exception as e:
+            logger.error(f"Error: Failed to get raw url for path {self.path}, error: {repr(e)}")
+            raise
         finally:
             await self.task_manager.remove_task(RawLinkManager, self.path, sub_key=self.task_sub_key)
 
@@ -95,6 +98,7 @@ class RawLinkManager():
         Returns:
             str: strm文件中的直链
         """
+        logger.info(f"Checking strm link: {repr(self.path)}")
         # 流式请求可以避免获取响应体
         async with self.client.stream("GET", self.path, headers={
             "user-agent": self.ua

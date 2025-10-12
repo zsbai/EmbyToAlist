@@ -38,7 +38,7 @@ CHUNK_SIZE_OF_CHUNKSWITER = env.int("CHUNK_SIZE_OF_CHUNKSWITER", default=200*102
 MEMORY_CACHE_ONLY = env.bool("MEMORY_CACHE_ONLY", default=False)
 """是否只使用内存缓存，默认False"""
 
-HIGH_COMPAT_MEDIA_CLIENTS = env.list("HIGH_COMPAT_MEDIA_CLIENTS", subcast=str, default=["mpv"])
+HIGH_COMPAT_MEDIA_CLIENTS = env.list("HIGH_COMPAT_MEDIA_CLIENTS", subcast=str, default=["mpv", "senplayer"])
 """对Range请求支持较好的播放器列表，默认mpv"""
 HIGH_COMPAT_MEDIA_CLIENTS = [client.strip().lower() for client in HIGH_COMPAT_MEDIA_CLIENTS]
 
