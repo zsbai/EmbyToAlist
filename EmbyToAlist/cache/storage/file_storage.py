@@ -224,16 +224,7 @@ class FileStorage:
             writer (ChunksWriter): 分块写入器
             file_info (FileInfo): 文件信息
             range_info (RangeInfo): 范围信息
-        """
-        await asyncio.sleep(60)
-        if not writer.completed:
-            for _ in range(3):
-                if writer.completed:
-                    break
-                await asyncio.sleep(10)
-            # 如果等待3次仍未完成，则继续
-            logger.warning("Writer not completed after waiting, proceeding anyway")
-        
+        """        
         # 从writer中获取头信息
         file_headers = writer.file_headers
         if file_headers:
@@ -264,7 +255,6 @@ class FileStorage:
                 final_path = cache_dir / fname
                 await aiofiles.os.rename(temp_path, final_path)
                 logger.info(f"Cache file written: {final_path}")
-                await self._update_cache_stats(final_path, file_headers, item_info)
                 
         # 处理writer.read中抛出的异常
         except IOError as e:
@@ -275,6 +265,13 @@ class FileStorage:
             logger.error(f"Unexpected error during cache write: {e}")
             if await aiofiles.os.path.exists(temp_path):
                 await aiofiles.os.remove(temp_path)
+        else:
+            # 更新缓存统计信息
+            await self._update_cache_stats(
+                file_path=final_path,
+                file_headers=file_headers,
+                item_info=item_info
+            )
         
     async def _update_cache_stats(self, file_path: Path, file_headers: Optional[FileHeaders] = None, 
                                  item_info: Optional['ItemInfo'] = None):

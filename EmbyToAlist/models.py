@@ -51,14 +51,24 @@ class TVShowsInfo:
 
 @dataclass
 class FileInfo:
+    """ 文件信息 """
+    
     id: str
+    """ media source id"""
     path: str
+    """ 媒体文件路径 """
     bitrate: int
+    """ 媒体文件码率 """
     size: int
+    """ 媒体文件大小 """
     container: str
+    """ 媒体文件容器格式 """
     cache_file_size: int
+    """ 缓存文件大小 """
     name: str
+    """ 媒体文件名称 """
     is_strm: bool = False
+    """ 是否为strm文件 """
 
 @dataclass
 class FileHeaders:

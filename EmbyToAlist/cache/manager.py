@@ -98,7 +98,7 @@ class TaskManager():
         expired_at = time.time() + ttl
         async with self.lock:
             self.tasks.setdefault(type_key, {}).setdefault(file_id, {})[sub_key] = (task_instance, expired_at)
-        logger.debug(f"Task created for {file_id} with sub key '{sub_key}', ttl={ttl}")
+        logger.debug(f"Task created for {file_id}(type={type_key}) with sub key '{sub_key}', ttl={ttl}")
             
     async def remove_task(
         self, 
@@ -118,10 +118,10 @@ class TaskManager():
             task_group = self.tasks.get(type_key, {}).get(file_id, {})
             if sub_key in task_group:
                 del task_group[sub_key]
-                logger.debug(f"Task removed for {file_id} with sub key '{sub_key}'")
+                logger.debug(f"Task removed for {file_id}(type={type_key}) with sub key '{sub_key}'")
 
             else:
-                logger.debug(f"Task not found for {file_id} with sub key '{sub_key}'")
+                logger.debug(f"Task not found for {file_id}(type={type_key}) with sub key '{sub_key}'")
             
             # 清理空结构
             if not task_group:

@@ -39,7 +39,7 @@ async def get_alist_raw_url(file_path: str, ua: str, max_retries: int = 5, retry
     for attempt in range(0, max_retries):
         try:
             logger.debug(f"Attempting to get Alist Raw Url: {file_path}, Attempt: {attempt + 1}")
-            resp = await client.post(alist_api_url, json=body, headers=header, timeout=2)
+            resp = await client.post(alist_api_url, json=body, headers=header)
             resp.raise_for_status()
             resp = resp.json()
 

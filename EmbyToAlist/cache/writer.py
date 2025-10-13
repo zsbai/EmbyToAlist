@@ -22,6 +22,7 @@ class ChunksWriter():
         self.queue = asyncio.Queue()
         self.cache_data = bytearray()
         
+        # 内部的缓存写入任务
         self.task: asyncio.Task = None
                 
         self.condition = asyncio.Condition()
@@ -76,11 +77,11 @@ class ChunksWriter():
                 timeout=httpx.Timeout(30)
             ) as response:
                 
+                logger.debug(f"File Source Response Headers: {response.headers}")
                 if response.status_code != 206:
                     raise ValueError(f"Expected 206 response, got {response.status_code}")
                 
                 # 提取文件头信息
-                logger.debug(f"File Source Response Headers: {response.headers}")
                 etag = response.headers.get('ETag')
                 last_modified = response.headers.get('Last-Modified')
                 content_disposition = response.headers.get('Content-Disposition')
@@ -117,9 +118,12 @@ class ChunksWriter():
                 self.condition.notify_all()
         
     async def write(self, raw_url: str, req_fs_header: dict):
-        """创建写入异步任务
+        """
+        创建写入异步任务
         
-        :param raw_url: 直链URL
+        Args:
+            raw_url (str): 直链URL
+            req_fs_header (dict): 请求头
         """
         if self.task is None:
             self.task = asyncio.create_task(self._write(raw_url, req_fs_header))

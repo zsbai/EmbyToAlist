@@ -1,5 +1,4 @@
 import asyncio
-import copy
 from pathlib import Path
 from copy import deepcopy
 
@@ -39,11 +38,11 @@ class CacheSystem():
     def shutdown(self):
         pass
     
-    async def get_writer(self, request_info: RequestInfo) -> ChunksWriter:
+    async def _get_writer(self, request_info: RequestInfo) -> ChunksWriter:
         """
         获取缓存文件的写入器, 如果缓存文件已经存在，则返回已存在的写入器
         
-        ChunkWriter 存活时间为 60 秒，超过时间则会被删除
+        ChunkWriter 存活时间为 180 秒，超过时间则会被删除
         
         Args:
             request_info (RequestInfo): 请求信息
@@ -55,18 +54,66 @@ class CacheSystem():
         file_id = request_info.file_info.id
         sub_key = 'tail' if request_info.cache_range_status == CacheRangeStatus.FULLY_CACHED_TAIL else 'head'
         
-        task = await self.task_manager.get_task(ChunksWriter, file_id, sub_key)
+        task: ChunksWriter = await self.task_manager.get_task(ChunksWriter, file_id, sub_key)
         if task is not None:
             return task
         else:
             writer = ChunksWriter(request_info)
-            await self.task_manager.create_task(ChunksWriter, file_id, writer, sub_key, ttl=60)
+            await self.task_manager.create_task(ChunksWriter, file_id, writer, sub_key, ttl=180)
 
             return writer
-    
-    async def warm_up_tail_cache(self, request_info: RequestInfo, req_fs_header: dict):
+        
+    async def _write_to_disk(self, request_info: RequestInfo, writer: ChunksWriter):
         """
-        预热尾部缓存
+        将内存中的缓存写入到磁盘中
+        
+        Args:
+            request_info (RequestInfo): 请求信息
+            writer (ChunksWriter): 缓存写入器
+        """
+        sub_key = 'tail' if request_info.cache_range_status == CacheRangeStatus.FULLY_CACHED_TAIL else 'head'
+        disk_writer_key = f"disk_writer_{request_info.file_info.id}_{sub_key}"
+
+        if await self.task_manager.get_task(object, disk_writer_key, sub_key) is None:
+            try:
+                # 创建一个虚拟任务来标记写入操作的开始
+                # 不设置过期时间，写入完成后手动删除
+                await self.task_manager.create_task(object, disk_writer_key, object(), sub_key, ttl=None)
+                
+                # 避免IO阻塞
+                await asyncio.sleep(60)
+
+                if not writer.completed:
+                    for _ in range(3):
+                        if writer.completed:
+                            break
+                        await asyncio.sleep(10)
+
+                    logger.warning(f"writer not completed after waiting; aborting disk write for safety.(key={disk_writer_key})")
+                    return
+                
+                try:
+                    await asyncio.wait_for(
+                            self.storage.write_to_disk(
+                                writer=writer,
+                                file_info=request_info.file_info,
+                                range_info=request_info.range_info,
+                                item_info=request_info.item_info
+                            ), timeout=90 # 这里的90秒 = 180[ChunkWriter存活时间] - (60+3*10)[最大等待时间]
+                    )
+                    
+                except asyncio.TimeoutError:
+                    logger.error(f"Disk write operation timed out (key={disk_writer_key})")
+                except Exception as e:
+                    logger.error(f"Error during disk write operation (key={disk_writer_key}): {repr(e)}")
+            finally:
+                # 兜底，保证任务被移除
+                logger.warning(f"Removing disk write task (key={disk_writer_key})")
+                await self.task_manager.remove_task(object, disk_writer_key, sub_key)
+    
+    async def _warm_up_tail_cache(self, request_info: RequestInfo, req_fs_header: dict):
+        """
+        针对传入的request_info，预热当前资源的末尾缓存
         
         Args:
             request_info (RequestInfo): 请求信息
@@ -74,7 +121,7 @@ class CacheSystem():
         """
         logger.debug("Warming up tail cache")
         # 定义缓存参数
-        tail_request_info = copy.deepcopy(request_info)
+        tail_request_info = deepcopy(request_info)
         tail_request_info.cache_range_status = CacheRangeStatus.FULLY_CACHED_TAIL
         tail_request_info.range_info.cache_range = (
             request_info.file_info.size - 1 - INITIAL_CACHE_SIZE_OF_TAIL, 
@@ -84,35 +131,15 @@ class CacheSystem():
         tail_request_info.range_info.request_range = None
         tail_request_info.range_info.response_range = None
         
-        sub_key = 'tail'
-        file_id = tail_request_info.file_info.id
+        writer = await self._get_writer(tail_request_info)
         
-        # 防止异步中的竞争条件
-        task = await self.task_manager.get_task(ChunksWriter, file_id, sub_key)
-        if task is not None:
-            logger.debug("Warm up tail cache task already exists, skipping")
-            return
-        
-        writer = ChunksWriter(tail_request_info)
-        await self.task_manager.create_task(ChunksWriter, file_id, writer, sub_key, ttl=40)
         await writer.write(await tail_request_info.raw_link_manager.get_raw_url(), req_fs_header)
         if not MEMORY_CACHE_ONLY:
             # 缓存写入硬盘
-            disk_writer_key = f"disk_writer_{file_id}_{sub_key}"
-
-            # 检查是否已经有写入任务
-            if await self.task_manager.get_task(object, disk_writer_key) is None:
-                # 创建一个虚拟任务来标记写入操作的开始
-                await self.task_manager.create_task(object, disk_writer_key, object(), sub_key, ttl=60)
-                asyncio.create_task(
-                    self.storage.write_to_disk(
-                        writer=writer,
-                        file_info=tail_request_info.file_info,
-                        range_info=tail_request_info.range_info,
-                        item_info=tail_request_info.item_info
-                    )
-                )
-            
+            asyncio.create_task(
+                self._write_to_disk(tail_request_info, writer)
+            )
+    
     def verify_cache_file(self, file_info: FileInfo, start: int, end: int) -> bool:
         """
         验证缓存文件是否符合 Emby 文件大小，筛选出错误缓存文件
@@ -139,6 +166,8 @@ class CacheSystem():
         cache_next_episode_tag: bool = False
     ) -> ChunksWriter:
         """
+        如果已经有对应的chunk writer，则直接返回；
+        
         开始向内存写入缓存文件，可以直接通过 ChunksWriter 中的read方法，读取缓存文件的任意部分
         
         Args:
@@ -147,7 +176,11 @@ class CacheSystem():
         Returns:
             ChunksWriter: 缓存文件的写入器
         """
-        writer: ChunksWriter = await self.get_writer(request_info)
+        writer: ChunksWriter = await self._get_writer(request_info)
+        
+        if writer.task is not None:
+            # 已经有写入任务，直接返回
+            return writer
         
         url: str = await request_info.raw_link_manager.get_raw_url()
         # 构建request header
@@ -161,26 +194,13 @@ class CacheSystem():
         # 预热尾部缓存
         if await self.task_manager.get_task(ChunksWriter, request_info.file_info.id, 'tail') is None:
             # 预热尾部缓存
-            await self.warm_up_tail_cache(request_info, req_fs_header)
+            await self._warm_up_tail_cache(request_info, req_fs_header)
         
         if not MEMORY_CACHE_ONLY:
             # 缓存写入硬盘
-            file_id = request_info.file_info.id
-            sub_key = 'tail' if request_info.cache_range_status == CacheRangeStatus.FULLY_CACHED_TAIL else 'head'
-            disk_writer_key = f"disk_writer_{file_id}_{sub_key}"
-
-            # 检查是否已经有写入任务
-            if await self.task_manager.get_task(object, disk_writer_key) is None:
-                # 创建一个虚拟任务来标记写入操作的开始
-                await self.task_manager.create_task(object, disk_writer_key, object(), sub_key, ttl=120)
-                asyncio.create_task(
-                    self.storage.write_to_disk(
-                        writer=writer,
-                        file_info=request_info.file_info,
-                        range_info=request_info.range_info,
-                        item_info=request_info.item_info
-                    )
-                )
+            asyncio.create_task(
+                self._write_to_disk(request_info, writer)
+            )
                 
         if not cache_next_episode_tag:
             # 只在请求开头时尝试缓存下一集

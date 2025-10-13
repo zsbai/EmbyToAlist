@@ -70,12 +70,10 @@ class RawLinkManager():
             raw_url = await self.cache_raw_url()
             await self.cache.set(self.key, raw_url, ttl=3600)
             self.raw_url = raw_url
-            return 
+            return raw_url
         except Exception as e:
             logger.error(f"Error: Failed to get raw url for path {self.path}, error: {repr(e)}")
             raise
-        finally:
-            await self.task_manager.remove_task(RawLinkManager, self.path, sub_key=self.task_sub_key)
 
 
     async def cache_raw_url(self) -> str:
@@ -146,5 +144,3 @@ class RawLinkManager():
         except Exception as e:
             logger.error(f"Error: RawLinkManager task failed for path {self.path}, error: {e}")
             raise fastapi.HTTPException(status_code=500, detail="RawLinkManager task")
-        finally:
-            await self.task_manager.remove_task(RawLinkManager, self.path, sub_key=self.task_sub_key)
