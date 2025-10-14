@@ -301,7 +301,7 @@ class CacheSystem():
             EmbyClient(api_key=request_info.api_key)
         )
         if next_item_info is None:
-            logger.debug(f"No next episode found for {previous_item_info.item_id}")
+            logger.debug(f"Next episode not found for {previous_item_info.item_id}")
             return
         
         file_infos: list[FileInfo] = await get_file_info(
@@ -309,10 +309,9 @@ class CacheSystem():
             next_item_info.item_id,
             media_source_id=None
         )
-        
-        logger.info(f"Next episode found: {next_item_info.item_id}")
-        
+                
         for file_info in file_infos:
+            logger.info(f"Next episode found: {file_info.name}(item_id: {next_item_info.item_id}, file_id: {file_info.id}), starting caching...")
             
             result = check_file_path(file_info)
             if not result.valid:
@@ -320,24 +319,24 @@ class CacheSystem():
                 continue
             else:
                 file_info = result.transformed_file_info
-
-            next_raw_link_manager = RawLinkManager(
-                path=file_info.path,
-                is_strm=file_info.is_strm,
-                ua=request_info.user_agent or 'EmbyToAlist',
-            )
-            
-            await next_raw_link_manager.create_task()
-            
+                        
             next_request_info = deepcopy(request_info)
             next_request_info.file_info = file_info
             next_request_info.item_info = next_item_info
-            next_request_info.raw_link_manager = next_raw_link_manager
+            next_request_info.raw_link_manager = None
             
             # 检查是否已经缓存
             if await self.get_cache_status(next_request_info):
-                logger.debug(f"Next episode {next_item_info.item_id} is already cached.")
+                logger.debug(f"Next episode {next_item_info.item_id}(file_id: {file_info.id}) is already cached.")
                 return
+            else:
+                # 创建 RawLinkManager
+                next_raw_link_manager = RawLinkManager(
+                    path=file_info.path,
+                    is_strm=file_info.is_strm,
+                    ua=request_info.user_agent or 'EmbyToAlist',
+                )
+                await next_raw_link_manager.create_task()
             
             # 开始缓存
             await self.start_write_cache_file(next_request_info, cache_next_episode_tag=True)
