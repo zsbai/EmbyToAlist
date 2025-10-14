@@ -59,12 +59,7 @@ class ChunksWriter():
         # 每个chunk 2MB
         chunk_size = CHUNK_SIZE_OF_CHUNKSWITER
         
-        if self.cache_range_start == 0:
-            # 读取头部
-            self.request_header['Range'] = f"bytes=0-{self.cache_range_end}"
-        else:
-            # 读取尾部
-            self.request_header['Range'] = f"bytes={self.cache_range_start}-{self.cache_range_end}"
+        self.request_header['Range'] = f"bytes={self.cache_range_start}-{self.cache_range_end}"
 
         logger.debug(f"Header of File Source Request: {self.request_header}")
 
@@ -78,13 +73,23 @@ class ChunksWriter():
             ) as response:
                 
                 logger.debug(f"File Source Response Headers: {response.headers}")
-                if response.status_code != 206:
+                if response.status_code != 206 and response.status_code != 200:
                     raise ValueError(f"Expected 206 response, got {response.status_code}")
                 
                 # 提取文件头信息
                 etag = response.headers.get('ETag')
                 last_modified = response.headers.get('Last-Modified')
                 content_disposition = response.headers.get('Content-Disposition')
+                
+                if response.status_code == 200:
+                        logger.warning("Warning: Received 200 OK for a ranged request.")
+                        
+                content_length = response.headers.get('Content-Length')
+                if content_length is None:
+                    raise ValueError("Content-Length header is missing in response")
+                content_length = int(content_length)
+                if content_length != (self.cache_range_end - self.cache_range_start + 1):
+                    raise ValueError(f"Content-Length {content_length} does not match expected range size {self.cache_range_end - self.cache_range_start + 1}")
                 
                 # 只有当至少有一个头信息存在时才创建FileHeaders对象
                 if etag or last_modified or content_disposition:
