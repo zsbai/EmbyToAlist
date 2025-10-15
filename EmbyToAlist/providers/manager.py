@@ -4,13 +4,16 @@ import json
 
 import fastapi
 from aiocache import Cache
+import httpx
 from loguru import logger
+from tenacity import RetryError, retry, retry_if_exception_type, stop_after_attempt, wait_fixed, before_log, after_log
 
 from .rawlink.alist.rawlink import get_alist_raw_url
 from .media_server.emby.rawlink import get_emby_raw_url
 from ..cache.manager import AppContext
 from ..config import ENABLE_UA_PASSTHROUGH, RAW_LINK_PROVIDER
 from ..utils.common import ClientManager
+from typing import Optional
 
 class RawLinkManager():
     """管理alist直链获取任务和缓存
@@ -54,42 +57,104 @@ class RawLinkManager():
             logger.debug(f"Raw Url Cache hit for {self.path}")
             return
 
-        existing_task = await self.task_manager.get_task(RawLinkManager, self.path, sub_key=self.task_sub_key)
+        existing_task = await self.task_manager.get_task(RawLinkTask, self.path, sub_key=self.task_sub_key)
         if existing_task:
             logger.debug(f"Task already exists for {self.path} - reuse")
             return
 
-        task = asyncio.create_task(self._wrapped_download())
-        await self.task_manager.create_task(RawLinkManager, self.path, task, sub_key=self.task_sub_key, ttl=600)
+        task = RawLinkTask(self.path, self.is_strm, self.ua)
+        task.run()
+        
+        await self.task_manager.create_task(RawLinkTask, self.path, task, sub_key=self.task_sub_key, ttl=600)
 
-    async def _wrapped_download(self):
-        """
-        包装获取直链的协程函数，加入协程池
-        """
+    async def get_raw_url(self) -> str:
+        """用于外部获取直链（自动触发任务/复用任务）"""
+        if self.raw_url is not None:
+            return self.raw_url
+
+        if await self.cache.exists(self.key):
+            self.raw_url = await self.cache.get(self.key)
+            logger.debug(f"Cache hit for {self.path}")
+            return self.raw_url
+
+        task: Optional[RawLinkTask] = await self.task_manager.get_task(RawLinkTask, self.path, sub_key=self.task_sub_key)
+        if not task:
+            raise fastapi.HTTPException(status_code=500, detail="RawLinkTask not created")
+
         try:
-            raw_url = await self.cache_raw_url()
-            await self.cache.set(self.key, raw_url, ttl=3600)
-            self.raw_url = raw_url
-            return raw_url
+            self.raw_url = await task.get_result()
+            await self.cache.set(self.key, self.raw_url, ttl=3600)
+            return self.raw_url
+        except RetryError as e:
+            logger.error(f"Error: RawLinkTask failed for path {self.path}, error: {e}")
+            await self.task_manager.remove_task(RawLinkTask, self.path, sub_key=self.task_sub_key)
+            raise fastapi.HTTPException(status_code=500, detail="RawLinkTask failed after retries")
         except Exception as e:
-            logger.error(f"Error: Failed to get raw url for path {self.path}, error: {repr(e)}")
-            raise
+            logger.error(f"Error: RawLinkTask failed for path {self.path}, error: {e}")
+            await self.task_manager.remove_task(RawLinkTask, self.path, sub_key=self.task_sub_key)
+            raise fastapi.HTTPException(status_code=500, detail="RawLinkTask failed")
 
+class RawLinkTask():
+    """
+    获取直链的异步任务
+    
+    """
 
-    async def cache_raw_url(self) -> str:
-        """获取alist直链并缓存
-        1. 如果是strm文件，请求strm，缓存真正的文件链接
-        2. 如果是普通文件，使用 provider 获取直链（alist 或 emby）
-        """
-        provider = (RAW_LINK_PROVIDER or 'alist').lower()
-        if provider == 'emby':
-            # Emby 模式：忽略 is_strm，直接通过第二台 Emby 解析直链
-            return await get_emby_raw_url(self.path)
-        # 默认/Alist 模式
+    def __init__(
+        self,
+        path: str,
+        is_strm: bool,
+        ua: str = None,
+        provider: str = RAW_LINK_PROVIDER,
+    ):
+        self.path = path
+        self.is_strm = is_strm
+        self.ua = ua
+        self.provider = (provider or 'alist').lower()
+        
+        self.client = ClientManager.get_client()
+        
+        self.task: Optional[asyncio.Task] = None
+        self.raw_url = None
+    
+    def run(self) -> asyncio.Task:
+        self.task = asyncio.create_task(self._run())
+        return self.task
+
+    async def _run(self) -> str:
+        logger.debug(f"[{self.provider}] Fetching raw link for {self.path} (is_strm={self.is_strm})")
+        if self.raw_url is not None:
+            return self.raw_url
+        
         if self.is_strm:
-            return await self.precheck_strm()
-        return await get_alist_raw_url(self.path, self.ua)
+            if not self.path.startswith(("http://", "https://")):
+                raise fastapi.HTTPException(status_code=500, detail="STRM file path is not a valid URL")
+            self.raw_url = await self.precheck_strm()
+        else:
+            if self.provider == 'emby':
+                self.raw_url = await get_emby_raw_url(self.path)
+            elif self.provider == 'alist':
+                self.raw_url = await get_alist_raw_url(self.path, self.ua)
+            else:
+                raise fastapi.HTTPException(status_code=500, detail=f"Unsupported provider: {self.provider}")
+        return self.raw_url
+    
+    async def get_result(self) -> str:
+        if self.raw_url is not None:
+            return self.raw_url
+        else:
+            if self.task is None:
+                raise fastapi.HTTPException(status_code=500, detail="RawLinkTask not started")
+            # 避免任务被取消
+            return await asyncio.shield(self.task)
 
+    @retry(
+        stop=stop_after_attempt(5),
+        wait=wait_fixed(0.1),
+        reraise=True,
+        before_sleep=lambda retry_state: logger.info(f"[{retry_state.attempt_number}/5] Request Strm Raw Url failed ({retry_state.outcome.exception()}), retrying..."),
+        retry=retry_if_exception_type((httpx.ReadTimeout, httpx.RequestError))
+    )
     async def precheck_strm(self) -> str:
         """预先请求strm文件地址，以便在请求时直接返回直链
 
@@ -98,9 +163,14 @@ class RawLinkManager():
         """
         logger.info(f"Checking strm link: {repr(self.path)}")
         # 流式请求可以避免获取响应体
-        async with self.client.stream("GET", self.path, headers={
-            "user-agent": self.ua
-            }) as response:
+        async with self.client.stream(
+            "GET",
+            self.path, 
+            headers={
+                "user-agent": self.ua
+            },
+            timeout=10
+        ) as response:
             if response.status_code in {302, 301, 307, 308}:
                 location = response.headers.get("Location")
                 if location:
@@ -121,28 +191,3 @@ class RawLinkManager():
                 response.raise_for_status()
 
             raise fastapi.HTTPException(status_code=500, detail="Failed to request strm file")
-
-    async def get_raw_url(self) -> str:
-        """用于外部获取直链（自动触发任务/复用任务）"""
-        if self.raw_url is not None:
-            return self.raw_url
-
-        if await self.cache.exists(self.key):
-            self.raw_url = await self.cache.get(self.key)
-            logger.debug(f"Cache hit for {self.path}")
-            return self.raw_url
-
-        task = await self.task_manager.get_task(RawLinkManager, self.path, sub_key=self.task_sub_key)
-        if not task:
-            raise fastapi.HTTPException(status_code=500, detail="RawLinkManager task not created")
-
-        try:
-            return await task
-        except asyncio.CancelledError:
-            logger.warning("RawLinkManager task was cancelled")
-            await self.task_manager.remove_task(RawLinkManager, self.path, sub_key=self.task_sub_key)
-            raise fastapi.HTTPException(status_code=500, detail="RawLinkManager task was cancelled")
-        except Exception as e:
-            logger.error(f"Error: RawLinkManager task failed for path {self.path}, error: {e}")
-            await self.task_manager.remove_task(RawLinkManager, self.path, sub_key=self.task_sub_key)
-            raise fastapi.HTTPException(status_code=500, detail="RawLinkManager task failed")

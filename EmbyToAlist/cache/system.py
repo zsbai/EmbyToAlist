@@ -187,6 +187,7 @@ class CacheSystem():
         req_fs_header = {
             'User-Agent': request_info.raw_link_manager.ua,
             'Host': url.split('/')[2],
+            'Cache-Control': 'no-cache, no-transform'
         }
         
         await writer.write(url, req_fs_header)

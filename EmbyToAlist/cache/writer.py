@@ -4,12 +4,12 @@ import time
 import httpx
 from fastapi import HTTPException
 from loguru import logger
+from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_type
 
 from ..config import CHUNK_SIZE_OF_CHUNKSWITER
 from ..utils.common import ClientManager
 from ..models import RequestInfo, CacheRangeStatus, FileHeaders
 from typing import AsyncGenerator, Optional
-
 
 class ChunksWriter():
     def __init__(
@@ -19,7 +19,6 @@ class ChunksWriter():
         
         self.client: httpx.AsyncClient = ClientManager.get_client()
         
-        self.queue = asyncio.Queue()
         self.cache_data = bytearray()
         
         # 内部的缓存写入任务
@@ -48,12 +47,24 @@ class ChunksWriter():
 
     def __del__(self):
         logger.debug(f"ChunksWriter: {self.cache_range_start}-{self.cache_range_end} has been deleted")
-        
+    
+    @retry(
+        stop=stop_after_attempt(5),
+        wait=wait_fixed(0.3),
+        reraise=True,
+        before_sleep=lambda retry_state: logger.info(f"[{retry_state.attempt_number}/5] ChunksWriter write cache failed, {repr(retry_state.outcome.exception()) if retry_state.outcome else ''}"),
+        retry=retry_if_exception_type((httpx.ReadTimeout, httpx.RequestError))
+    )
     async def _write(self, raw_url: str, req_fs_header: dict):
         """异步写入缓存文件
         
         :param raw_url: 直链URL
         """
+        # 清理状态，避免脏数据
+        self.completed = False
+        self.error = None
+        self.cache_data = bytearray()
+        
         self.request_header = req_fs_header
         
         # 每个chunk 2MB
@@ -64,6 +75,8 @@ class ChunksWriter():
         logger.debug(f"Header of File Source Request: {self.request_header}")
 
         before = time.time()
+        logger.debug(f"======== Cache write started for range {self.cache_range_start}-{self.cache_range_end} =======")
+
         try:
             async with self.client.stream(
                 "GET",
@@ -86,10 +99,10 @@ class ChunksWriter():
                         
                 content_length = response.headers.get('Content-Length')
                 if content_length is None:
-                    raise ValueError("Content-Length header is missing in response")
+                    raise httpx.RequestError("Content-Length header is missing in response")
                 content_length = int(content_length)
                 if content_length != (self.cache_range_end - self.cache_range_start + 1):
-                    raise ValueError(f"Content-Length {content_length} does not match expected range size {self.cache_range_end - self.cache_range_start + 1}")
+                    raise httpx.RequestError(f"Content-Length {content_length} does not match expected range size {self.cache_range_end - self.cache_range_start + 1}")
                 
                 # 只有当至少有一个头信息存在时才创建FileHeaders对象
                 if etag or last_modified or content_disposition:
@@ -102,9 +115,7 @@ class ChunksWriter():
                 else:
                     self.file_headers = None
                     logger.debug("No headers found in response")
-                
-                logger.debug(f"======== Cache write started for range {self.cache_range_start}-{self.cache_range_end} =======")
-                
+                                
                 async for chunk in response.aiter_bytes(chunk_size):
                     # 写入缓存文件
                     async with self.condition:
@@ -115,13 +126,22 @@ class ChunksWriter():
                     logger.debug(f"======== Cache write completed for range {self.cache_range_start}-{self.cache_range_end} in <{time.time() - before:.2f}> seconds =======")
                     self.completed = True
                     self.condition.notify_all()
+        except httpx.RequestError as e:
+            raise e
+    
+    async def _run_write(self, raw_url: str, req_fs_header: dict):
+        """
+        兜底策略，防止read()被重试抛出的的 retryError 锁死
+        """
+        try:
+            await self._write(raw_url, req_fs_header)
         except Exception as e:
             logger.error(f"Error occurred during chunk writing: {repr(e)}")
             async with self.condition:
                 self.error = e
                 self.completed = True
                 self.condition.notify_all()
-        
+    
     async def write(self, raw_url: str, req_fs_header: dict):
         """
         创建写入异步任务
@@ -131,7 +151,7 @@ class ChunksWriter():
             req_fs_header (dict): 请求头
         """
         if self.task is None:
-            self.task = asyncio.create_task(self._write(raw_url, req_fs_header))
+            self.task = asyncio.create_task(self._run_write(raw_url, req_fs_header))
         else:
             logger.debug("Write task already exists, skipping")
             return
@@ -183,8 +203,9 @@ class ChunksWriter():
         current_index = start
         while current_index < end:
             async with self.condition:
-                await self.condition.wait_for(lambda: len(self.cache_data) > current_index or self.completed)
-                
+                await self.condition.wait_for(
+                    lambda: len(self.cache_data) > current_index or self.completed
+                )
                 if self.error is not None:
                     raise IOError(f"Error occurred during cache writing: {repr(self.error)}")
                 

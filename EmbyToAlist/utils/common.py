@@ -43,7 +43,9 @@ class ClientManager():
             cls._client = httpx.AsyncClient(
                 http2=True,
                 limits=httpx.Limits(
-                    keepalive_expiry=30
+                    keepalive_expiry=30,
+                    max_keepalive_connections=30,
+                    max_connections=100,
                 )
             )
 

@@ -1,6 +1,7 @@
 import asyncio
 
-from httpx import ReadTimeout, RequestError
+import httpx
+from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_type
 from fastapi import HTTPException
 from loguru import logger
 
@@ -8,7 +9,14 @@ from ....config import ALIST_SERVER, ALIST_API_KEY
 from ....utils.common import ClientManager
 
 # return Alist Raw Url
-async def get_alist_raw_url(file_path: str, ua: str, max_retries: int = 5, retry_delay: float = 0.1) -> str:
+@retry(
+    stop=stop_after_attempt(5),
+    wait=wait_fixed(0.1),
+    reraise=True,
+    before_sleep=lambda retry_state: logger.info(f"[{retry_state.attempt_number}/5] Request Alist Raw Url failed ({retry_state.outcome.exception()}), retrying..."),
+    retry=retry_if_exception_type((httpx.ReadTimeout, httpx.RequestError))
+)
+async def get_alist_raw_url(file_path: str, ua: str) -> str:
     """
     创建或获取Alist Raw Url缓存，缓存时间为5分钟
 
@@ -36,33 +44,30 @@ async def get_alist_raw_url(file_path: str, ua: str, max_retries: int = 5, retry
     if ua:
         header['User-Agent'] = ua
 
-    for attempt in range(0, max_retries):
-        try:
-            logger.debug(f"Attempting to get Alist Raw Url: {file_path}, Attempt: {attempt + 1}")
-            resp = await client.post(alist_api_url, json=body, headers=header)
-            resp.raise_for_status()
-            resp = resp.json()
+    try:
+        logger.debug(f"Attempting to get Alist Raw Url: {file_path}")
+        resp = await client.post(alist_api_url, json=body, headers=header)
+        resp.raise_for_status()
+        resp: dict = resp.json()
 
-            code = resp.get("code", -1)
-
-            if code == 200:
-                logger.debug(f"Alist Raw Url: {resp['data']['raw_url']}")
-                return resp['data']['raw_url']
-            elif code == 403:
-                logger.error("Alist server response 403 Forbidden, Please check your Alist Key")
-                raise HTTPException(status_code=500, detail="Alist return 403 Forbidden, Please check your Alist Key")
-            else:
-                logger.error(f"Alist Error: {resp.get('message', 'Unknown Error')}")
-                raise HTTPException(status_code=500, detail=f"Alist Server Error: {resp.get('message')}")
-
-        except (ReadTimeout, RequestError) as e:
-            logger.warning(f"[{attempt}/{max_retries}] Request failed: {repr(e)}")
-            if attempt == max_retries:
-                raise HTTPException(status_code=500, detail="Alist Server Timeout")
-            await asyncio.sleep(retry_delay)
-        except Exception as e:
-            logger.error(f"Unexpected error during Alist request: {repr(e)}")
-            raise HTTPException(status_code=500, detail="Alist Server Error")
+        code = resp.get("code", -1)
+    except (httpx.ReadTimeout, httpx.RequestError) as e:
+        raise e
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 403:
+            logger.error("Alist server response 403 Forbidden, Please check your Alist Key")
+            raise HTTPException(status_code=500, detail="Alist return 403 Forbidden, Please check your Alist Key")
+        raise HTTPException(status_code=500, detail=f"Alist Server HTTP Error: {e.response.status_code}")
+    
+    if code == 200:
+        logger.debug(f"Alist Raw Url: {resp['data']['raw_url']}")
+        return resp['data']['raw_url']
+    elif code == 403:
+        logger.error("Alist server response 403 Forbidden, Please check your Alist Key")
+        raise HTTPException(status_code=500, detail="Alist return 403 Forbidden, Please check your Alist Key")
+    else:
+        logger.error(f"Alist Error: {resp.get('message', 'Unknown Error')}")
+        raise HTTPException(status_code=500, detail=f"Alist Server Error: {resp.get('message')}")
     
 async def warm_up_remote_fs(file_dir: str, max_retries: int = 3, retry_delay: float = 0.5) -> None:
     """
