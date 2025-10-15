@@ -334,10 +334,11 @@ class CacheSystem():
                 next_raw_link_manager = RawLinkManager(
                     path=file_info.path,
                     is_strm=file_info.is_strm,
-                    ua=request_info.user_agent or 'EmbyToAlist',
+                    ua=request_info.user_agent,
                 )
                 await next_raw_link_manager.create_task()
+                next_request_info.raw_link_manager = next_raw_link_manager
             
             # 开始缓存
-            await self.start_write_cache_file(next_request_info, cache_next_episode_tag=True)
             logger.info(f"Started caching next episode {next_item_info.item_id}: {file_info.name}")
+            await self.start_write_cache_file(next_request_info, cache_next_episode_tag=True)
