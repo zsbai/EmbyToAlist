@@ -103,8 +103,8 @@ async def warm_up_remote_fs(file_dir: str, max_retries: int = 3, retry_delay: fl
             else:
                 logger.error(f"Alist Error: {resp.get('message', 'Unknown Error')}")
                 raise HTTPException(status_code=500, detail=f"Alist Server Error: {resp.get('message')}")
-                
-        except (ReadTimeout, RequestError) as e:
+
+        except (httpx.ReadTimeout, httpx.RequestError) as e:
             logger.warning(f"[{attempt}/{max_retries}] Warm up failed: {e}")
             if attempt == max_retries:
                 raise HTTPException(status_code=500, detail="Alist Server Timeout")

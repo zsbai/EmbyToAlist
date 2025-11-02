@@ -54,7 +54,7 @@ class RawLinkManager():
         # 如果缓存中没有，则使用 TaskManager 创建唯一任务
         if await self.cache.exists(self.key):
             self.raw_url = await self.cache.get(self.key)
-            logger.debug(f"Raw Url Cache hit for {self.path}")
+            logger.debug(f"Raw Url Cache hit for {self.path}(url: {self.raw_url}), skip creating task")
             return
 
         existing_task = await self.task_manager.get_task(RawLinkTask, self.path, sub_key=self.task_sub_key)
@@ -74,7 +74,7 @@ class RawLinkManager():
 
         if await self.cache.exists(self.key):
             self.raw_url = await self.cache.get(self.key)
-            logger.debug(f"Cache hit for {self.path}")
+            logger.debug(f"Cache hit for {self.path}(url: {self.raw_url}), return cached raw_url")
             return self.raw_url
 
         task: Optional[RawLinkTask] = await self.task_manager.get_task(RawLinkTask, self.path, sub_key=self.task_sub_key)

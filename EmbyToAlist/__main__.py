@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 import fastapi
 import uvicorn
 
-from .config import LOG_LEVEL, CACHE_ENABLE, CACHE_PATH
+from .config import CACHE_ENABLE, CACHE_PATH, PORT
 from .routes import redirect, playback
 from .utils.common import ClientManager
 from .cache.manager import AppContext
@@ -32,7 +32,7 @@ app.include_router(playback.router)
 if __name__ == "__main__":
     uvicorn.run(
         app,
-        port=60001, 
+        port=PORT,
         host='0.0.0.0', 
         log_level=None
     )

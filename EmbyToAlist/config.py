@@ -3,6 +3,8 @@ from environs import Env
 env = Env()
 env.read_env()
 
+PORT = env.int("PORT", default=60001)
+
 EMBY_SERVER = env.str("EMBY_SERVER")
 
 ALIST_SERVER = env.str("ALIST_SERVER")
