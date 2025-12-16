@@ -12,12 +12,16 @@ from ..providers.media_server.emby.client import EmbyClient
 
 router = fastapi.APIRouter()
 
+# Example Path: /emby/Users/xxxx/Items/xxxx
+# @router.get('/emby/Users/{user_id}/Items/{item_id}')
+# Example Path: /emby/Items/xxx/PlaybackInfo
 @router.get('/emby/Items/{item_id}/PlaybackInfo')
 @router.post('/emby/Items/{item_id}/PlaybackInfo')
 async def playback_info(item_id: str, request: fastapi.Request):
     logger.debug(f"Received request for PlaybackInfo with item_id: {item_id}")
     api_key = extract_api_key(request)
     emby_client = EmbyClient(api_key=api_key, client=ClientManager.get_client())
+
     params = dict(request.query_params)
 
     try:
@@ -57,9 +61,9 @@ async def playback_info(item_id: str, request: fastapi.Request):
     ]
     for index, each in enumerate(files_info):
         ms_data = data['MediaSources'][index]
-        
+
         # 如果需要alist处理，如云盘路径，或strm流，提前通过异步缓存alist直链
-        if each.is_strm or should_redirect_to_alist(each.path):
+        if should_redirect_to_alist(each.path) or each.is_strm:
 
             if not ENABLE_UA_PASSTHROUGH: 
                 path = transform_file_path(each.path) if not each.is_strm else each.path
@@ -72,32 +76,41 @@ async def playback_info(item_id: str, request: fastapi.Request):
             scheme = request.url.scheme
             host = request.headers.get("host") or request.url.netloc
             
-            # 伪装文件名，兼容客户端格式校验
+            # 伪装文件名
             filename = os.path.basename(each.path)
             if not filename or filename.lower().endswith('.strm'):
                 filename = "stream.mkv" 
 
-            # 路径用item_id，参数传MediaSourceId
+            # 拼接直连地址
             new_url = f"{scheme}://{host}/emby/videos/{item_id}/{filename}?MediaSourceId={ms_id}&Static=true&api_key={api_key}"
             ms_data['DirectStreamUrl'] = new_url
 
-            # 强制设置容器为mkv
+            # 设置容器为mkv
             current_container = ms_data.get('Container', '').lower()
             if current_container in ['strm', '', 'other']:
                 ms_data['Container'] = 'mkv'
             
-            # 配置直连与转码规则
+            # 配置直连规则
             ms_data['SupportsDirectPlay'] = True
             ms_data['SupportsDirectStream'] = True
             ms_data['SupportsTranscoding'] = False
             
-            # 清理转码相关字段
+            # 清理转码字段
             ms_data.pop('TranscodingUrl', None)
             ms_data.pop('TranscodingSubProtocol', None)
             ms_data.pop('TranscodingContainer', None)
             
             logger.info(f"Fixed PlaybackInfo: Container={ms_data.get('Container')}, URL={new_url}")
 
+        else:
+            original_stream_url = data['MediaSources'][index]['DirectStreamUrl'] 
+            redirected_url = f"{request.base_url}preventRedirect/emby{original_stream_url}"
+
+        # if redirected_url:
+        #     data['MediaSources'][index]['DirectStreamUrl'] = redirected_url
+        #     logger.debug(f"Play Url modified to: {redirected_url}")
+
+    # logger.debug(data)
     headers = dict(response.headers)
     headers.pop('content-length', None)
 
@@ -106,4 +119,5 @@ async def playback_info(item_id: str, request: fastapi.Request):
         content=data,
         status_code=response.status_code,
         headers=headers,
-    )
+    )        
+    # 如果满足alist直链条件，提前通过异步缓存alist直链
