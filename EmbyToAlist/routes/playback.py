@@ -21,12 +21,10 @@ async def playback_info(item_id: str, request: fastapi.Request):
     logger.debug(f"Received request for PlaybackInfo with item_id: {item_id}")
     api_key = extract_api_key(request)
     emby_client = EmbyClient(api_key=api_key, client=ClientManager.get_client())
-
     params = dict(request.query_params)
 
     try:
-        # Forward the request to the remote server
-        # 尝试 JSON 负载，否则以原始 body 透传
+        # 转发请求给 Emby
         json_body = None
         content = None
         try:
@@ -34,7 +32,6 @@ async def playback_info(item_id: str, request: fastapi.Request):
         except Exception:
             content = await request.body()
 
-        # 过滤不该直传的请求头
         blocked = {"host", "content-length", "connection", "keep-alive", "proxy-connection", "te", "trailer", "transfer-encoding", "upgrade"}
         fwd_headers = {k: v for k, v in request.headers.items() if k.lower() not in blocked}
 
@@ -47,61 +44,60 @@ async def playback_info(item_id: str, request: fastapi.Request):
             content=content,
         )
         response.raise_for_status()
-
         data = response.json()
+        
     except Exception as e:
         logger.error(f"Error during proxying request: {e}")
-        return fastapi.Response(
-            content="Internal Server Error",
-            status_code=500,
-        )
-    # 从 PlaybackInfo 的 MediaSources 构建文件信息列表
+        return fastapi.Response(content="Internal Server Error", status_code=500)
+
+    # 修改 PlaybackInfo
     files_info: list[FileInfo] = [
         build_playback_info(ms) for ms in data.get('MediaSources', [])
     ]
+
     for index, each in enumerate(files_info):
         ms_data = data['MediaSources'][index]
-
-        # 如果需要alist处理，如云盘路径，或strm流，提前通过异步缓存alist直链
-        if should_redirect_to_alist(each.path) or each.is_strm:
-
+        
+        # 针对 strm 或 需要走 alist 的路径
+        if each.is_strm or should_redirect_to_alist(each.path):
+            
+            # 预热缓存
             if not ENABLE_UA_PASSTHROUGH: 
                 path = transform_file_path(each.path) if not each.is_strm else each.path
-
                 raw_link_manager = RawLinkManager(path, each.is_strm, request.headers.get("User-Agent"))
                 await raw_link_manager.create_task()
 
-            # 构造播放URL
+            # 构造 URL
             ms_id = ms_data.get('Id')
             scheme = request.url.scheme
             host = request.headers.get("host") or request.url.netloc
             
-            # 伪装文件名
+            # 伪装文件名，确保是主流视频格式后缀，防止客户端因为 .strm 后缀拒绝播放
             filename = os.path.basename(each.path)
             if not filename or filename.lower().endswith('.strm'):
                 filename = "stream.mkv" 
 
-            # 拼接直连地址
             new_url = f"{scheme}://{host}/emby/videos/{item_id}/{filename}?MediaSourceId={ms_id}&Static=true&api_key={api_key}"
+            
             ms_data['DirectStreamUrl'] = new_url
 
-            # 设置容器为mkv
+            # 强制修改容器格式，解决 strm 被识别为文本或未知格式的问题
             current_container = ms_data.get('Container', '').lower()
             if current_container in ['strm', '', 'other']:
-                ms_data['Container'] = 'mkv'
+                ms_data['Container'] = 'mkv' # mkv 兼容性最好，让客户端尝试解析流
             
-            # 配置直连规则
+            # 强制开启直连，禁用转码
             ms_data['SupportsDirectPlay'] = True
             ms_data['SupportsDirectStream'] = True
             ms_data['SupportsTranscoding'] = False
             
-            # 清理转码字段
+            # 清理干扰项，防止客户端尝试转码
             ms_data.pop('TranscodingUrl', None)
             ms_data.pop('TranscodingSubProtocol', None)
             ms_data.pop('TranscodingContainer', None)
             
             logger.info(f"Fixed PlaybackInfo: Container={ms_data.get('Container')}, URL={new_url}")
-
+        
         else:
             original_stream_url = data['MediaSources'][index]['DirectStreamUrl'] 
             redirected_url = f"{request.base_url}preventRedirect/emby{original_stream_url}"
@@ -114,10 +110,10 @@ async def playback_info(item_id: str, request: fastapi.Request):
     headers = dict(response.headers)
     headers.pop('content-length', None)
 
-    # Prepare the response to forward back to the client
     return fastapi.responses.JSONResponse(
         content=data,
         status_code=response.status_code,
         headers=headers,
     )        
     # 如果满足alist直链条件，提前通过异步缓存alist直链
+
