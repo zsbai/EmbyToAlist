@@ -14,9 +14,9 @@ def build_item_info(item: dict) -> ItemInfo:
         item_type = 'episode'
 
     tvshows_info = TVShowsInfo(
-        series_id=int(item['SeriesId']),
-        season_id=int(item['SeasonId']),
-        index_number=int(item['IndexNumber'])
+        series_id=int(item.get('SeriesId', 0)),
+        season_id=int(item.get('SeasonId', 0)),
+        index_number=int(item.get('IndexNumber', 0))
     ) if item_type == 'episode' else None
 
     return ItemInfo(
